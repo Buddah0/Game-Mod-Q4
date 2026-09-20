@@ -1,0 +1,44 @@
+windowDef Desktop {
+	rect		0, 0, 640, 480
+	backcolor	0, 0, 0, 0.7
+	visible		1
+
+	windowDef HelpPanel {
+		rect		80, 60, 480, 360
+		backcolor	0.1, 0.1, 0.15, 0.95
+		visible		1
+
+		windowDef HelpTitle {
+			rect		20, 15, 440, 40
+			forecolor	1, 0.8, 0.2, 1
+			textscale	0.5
+			font		"fonts/marine"
+			text		"ROCKET MOD - HELP"
+			visible		1
+		}
+
+		windowDef HelpLine {
+			rect		20, 55, 440, 2
+			backcolor	1, 0.8, 0.2, 0.8
+			visible		1
+		}
+
+		windowDef HelpText {
+			rect		20, 70, 440, 270
+			forecolor	0.9, 0.9, 0.9, 1
+			textscale	0.28
+			font		"fonts/marine"
+			text		"Welcome to the Rocket Mod!\n\nFEATURES:\n- Enhanced rocket launcher with increased damage\n- Faster rocket travel speed\n- Improved explosion effects\n\nCONTROLS:\nWASD - Move\nMouse - Aim\nLeft Click - Fire weapon\nR - Reload\nScroll Wheel - Change weapon\n\nTIP: Aim at enemy feet for splash damage!"
+			visible		1
+		}
+
+		windowDef DismissText {
+			rect		20, 320, 440, 25
+			forecolor	0.6, 0.6, 0.6, 1
+			textscale	0.22
+			font		"fonts/marine"
+			text		"This screen will dismiss automatically..."
+			visible		1
+		}
+	}
+}

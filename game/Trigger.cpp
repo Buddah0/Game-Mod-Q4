@@ -1544,3 +1544,98 @@ idTrigger_Touch::Disable
 void idTrigger_Touch::Disable( void ) {
 	BecomeInactive( TH_THINK );
 }
+
+/*
+===============================================================================
+
+  rvTrigger_HelpScreen
+
+===============================================================================
+*/
+
+CLASS_DECLARATION( idTrigger, rvTrigger_HelpScreen )
+	EVENT( EV_Touch,	rvTrigger_HelpScreen::Event_Touch )
+END_CLASS
+
+/*
+================
+rvTrigger_HelpScreen::rvTrigger_HelpScreen
+================
+*/
+rvTrigger_HelpScreen::rvTrigger_HelpScreen( void ) {
+	duration = 5.0f;
+	wait = 2.0f;
+	nextTriggerTime = 0;
+}
+
+/*
+================
+rvTrigger_HelpScreen::Spawn
+================
+*/
+void rvTrigger_HelpScreen::Spawn( void ) {
+	spawnArgs.GetFloat( "duration", "5.0", duration );
+	spawnArgs.GetFloat( "wait", "2.0", wait );
+	spawnArgs.GetString( "gui", "guis/help.gui", guiFile );
+
+	GetPhysics()->SetContents( CONTENTS_TRIGGER );
+}
+
+/*
+================
+rvTrigger_HelpScreen::Save
+================
+*/
+void rvTrigger_HelpScreen::Save( idSaveGame *savefile ) const {
+	savefile->WriteFloat( duration );
+	savefile->WriteFloat( wait );
+	savefile->WriteInt( nextTriggerTime );
+	savefile->WriteString( guiFile );
+}
+
+/*
+================
+rvTrigger_HelpScreen::Restore
+================
+*/
+void rvTrigger_HelpScreen::Restore( idRestoreGame *savefile ) {
+	savefile->ReadFloat( duration );
+	savefile->ReadFloat( wait );
+	savefile->ReadInt( nextTriggerTime );
+	savefile->ReadString( guiFile );
+}
+
+/*
+================
+rvTrigger_HelpScreen::Event_Touch
+================
+*/
+void rvTrigger_HelpScreen::Event_Touch( idEntity *other, trace_t *trace ) {
+	// Only trigger for players
+	if ( !other || !other->IsType( idPlayer::GetClassType() ) ) {
+		return;
+	}
+
+	// Check wait time
+	if ( nextTriggerTime > gameLocal.time ) {
+		return;
+	}
+
+	idPlayer *player = static_cast<idPlayer*>( other );
+
+	// Load and display the help GUI
+	idUserInterface *helpGui = uiManager->FindGui( guiFile.c_str(), true, false, true );
+	if ( helpGui ) {
+		player->SetHudOverlay( helpGui, static_cast<int>( duration * 1000 ) );
+	} else {
+		gameLocal.Warning( "rvTrigger_HelpScreen '%s': Could not load GUI '%s'", name.c_str(), guiFile.c_str() );
+	}
+
+	// Set next trigger time
+	if ( wait >= 0 ) {
+		nextTriggerTime = gameLocal.time + static_cast<int>( wait * 1000 );
+	} else {
+		// Negative wait means one-time trigger - disable it
+		PostEventMS( &EV_Remove, 0 );
+	}
+}

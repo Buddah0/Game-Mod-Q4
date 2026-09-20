@@ -1,0 +1,16 @@
+entityDef trigger_helpscreen {
+	"editor_color"			"0.5 0.5 1.0"
+	"editor_mins"			"-8 -8 -8"
+	"editor_maxs"			"8 8 8"
+	"editor_usage"			"Trigger that displays a help screen overlay when touched by the player."
+	
+	"spawnclass"			"rvTrigger_HelpScreen"
+	
+	"editor_var gui"		"Path to the GUI file to display (default: guis/help.gui)"
+	"editor_var duration"	"How long to display the help screen in seconds (default: 5.0)"
+	"editor_var wait"		"Time before trigger can be activated again in seconds. Use -1 for one-time trigger (default: 2.0)"
+	
+	"gui"					"guis/help.gui"
+	"duration"				"5.0"
+	"wait"					"2.0"
+}

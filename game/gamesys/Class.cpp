@@ -1300,6 +1300,7 @@ void idClass::RegisterClasses( void )
 	REGISTER(idTrigger_Multi); // ..\..\code\game\Trigger.cpp
 	REGISTER(idTrigger_Timer); // ..\..\code\game\Trigger.cpp
 	REGISTER(idTrigger_Touch); // ..\..\code\game\Trigger.cpp
+	REGISTER(rvTrigger_HelpScreen); // ..\..\code\game\Trigger.cpp
 	REGISTER(idVacuumEntity); // ..\..\code\game\Misc.cpp
 	REGISTER(idVacuumSeparatorEntity); // ..\..\code\game\Misc.cpp
 	REGISTER(idWorldspawn); // ..\..\code\game\WorldSpawn.cpp

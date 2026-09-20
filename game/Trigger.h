@@ -285,4 +285,31 @@ private:
 	void				Event_Trigger( idEntity *activator );
 };
 
+/*
+===============================================================================
+
+  Trigger which displays a help screen overlay when touched by the player.
+
+===============================================================================
+*/
+
+class rvTrigger_HelpScreen : public idTrigger {
+public:
+	CLASS_PROTOTYPE( rvTrigger_HelpScreen );
+
+						rvTrigger_HelpScreen( void );
+
+	void				Spawn( void );
+	void				Save( idSaveGame *savefile ) const;
+	void				Restore( idRestoreGame *savefile );
+
+private:
+	float				duration;		// how long to display the help screen (in seconds)
+	float				wait;			// time before trigger can be activated again
+	int					nextTriggerTime;
+	idStr				guiFile;		// path to the GUI file to display
+
+	void				Event_Touch( idEntity *other, trace_t *trace );
+};
+
 #endif /* !__GAME_TRIGGER_H__ */

@@ -3771,13 +3771,14 @@ void idPlayer::DrawHUD( idUserInterface *_hud ) {
 			gameLocal.mpGame.UpdateHud( _mphud );
 			_mphud->Redraw( gameLocal.time );
 		}
-		
-		if ( overlayHud && overlayHudTime > gameLocal.time && overlayHudTime != 0 ) {
-			overlayHud->Redraw( gameLocal.time );
-		} else {
-			overlayHud = NULL;
-			overlayHudTime = 0;
-		}
+	}
+
+	// draw timed overlays (e.g. trigger_helpscreen) in both single player and multiplayer
+	if ( overlayHud && overlayHudTime > gameLocal.time && overlayHudTime != 0 ) {
+		overlayHud->Redraw( gameLocal.time );
+	} else {
+		overlayHud = NULL;
+		overlayHudTime = 0;
 	}
 }
 

@@ -10,6 +10,7 @@
 
 #include "ai/AI.h"
 #include "ai/AI_Manager.h"
+#include "ai/AI_Util.h"
 #include "Weapon.h"
 #include "Projectile.h"
 #include "vehicle/Vehicle.h"
@@ -1510,7 +1511,7 @@ void idPlayer::Init( void ) {
 	idealWeapon				= -1;
 	previousWeapon			= -1;
 	weaponSwitchTime		= 0;
-	weaponEnabled			= true;
+	weaponEnabled			= false;	// PTP: the President is unarmed
  	showWeaponViewModel		= GetUserInfo()->GetBool( "ui_showGun" );
 	oldInventoryWeapons		= 0;
 
@@ -2484,6 +2485,7 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( previousWeapon );
  	savefile->ReadInt( weaponSwitchTime );
 	savefile->ReadBool( weaponEnabled );
+	weaponEnabled = false;	// PTP: older saves must not re-arm the President
 
 	savefile->ReadBool ( flashlightOn );
 	savefile->ReadBool ( zoomed );
@@ -7288,7 +7290,8 @@ void idPlayer::UpdateFocus( void ) {
 	if ( !gameLocal.isMultiplayer || (gameLocal.isMultiplayer && entityNumber == gameLocal.localClientNum) ) {
 		if ( wasTargetFriendly && !targetFriendly && focusType == FOCUS_NONE ) {
 			if ( cursor ) {
-				cursor->HandleNamedEvent ( WeaponIsEnabled() ? "showCrossCombat" : "crossHide" );
+				// PTP: always show the crosshair, the unarmed President still aims squad orders
+				cursor->HandleNamedEvent ( "showCrossCombat" );
 			}
 		}
 	}
@@ -7410,7 +7413,8 @@ void idPlayer::SetFocus ( playerFocus_t newType, int _focusTime, idEntity* newEn
 				// Make sure the weapon is shown in the default state
 // RAVEN BEGIN
 // abahr: don't do this if weapons are disabled
-				cursor->HandleNamedEvent ( WeaponIsEnabled() ? "showCrossCombat" : "crossHide" );
+// PTP: always show it, the unarmed President still aims squad orders
+				cursor->HandleNamedEvent ( "showCrossCombat" );
 // RAVEN END
 				break;
 		}
@@ -8456,6 +8460,12 @@ void idPlayer::PerformImpulse( int impulse ) {
 		ClientSendEvent( EVENT_IMPULSE, &msg );
 	}
 
+	// PTP: the unarmed President uses keys 1-4 (impulses 0-3) for squad orders
+	if ( !weaponEnabled && impulse >= IMPULSE_0 && impulse < IMPULSE_0 + PTP_NUM_ORDERS ) {
+		IssueSquadOrder( impulse - IMPULSE_0 );
+		return;
+	}
+
 	if ( impulse >= IMPULSE_0 && impulse <= IMPULSE_12 ) {
 		SelectWeapon( impulse, false );
 		return;
@@ -8506,7 +8516,9 @@ void idPlayer::PerformImpulse( int impulse ) {
 			break;
 		}
 		case IMPULSE_19: {
-/*		
+			// PTP: Tab shows / hides the help screen
+			ToggleHelpScreen();
+/*
 			// when we're not in single player, IMPULSE_19 is used for showScores
 			// otherwise it does IMPULSE_12 (PDA)
 			if ( !gameLocal.isMultiplayer ) {
@@ -11420,6 +11432,12 @@ idPlayer::Event_EnableWeapon
 ==================
 */
 void idPlayer::Event_EnableWeapon( void ) {
+// PTP: the President is unarmed. Scripts (medlabs) and target_enablelevelweapons
+// must not re-arm him, so only bring back the aim crosshair.
+	if ( cursor ) {
+		cursor->HandleNamedEvent( "showCrossCombat" );
+	}
+/*
 	gameLocal.world->spawnArgs.SetBool( "no_Weapons", 0 );
 	Give( "weapon", spawnArgs.GetString( va( "def_weapon%d", 0 ) ) );
  	hiddenWeapon = false;
@@ -11428,6 +11446,7 @@ void idPlayer::Event_EnableWeapon( void ) {
  		weapon->ExitCinematic();
 	}
 	ShowCrosshair();
+*/
 }
 
 /*
@@ -11441,7 +11460,9 @@ void idPlayer::Event_DisableWeapon( void ) {
    	if ( weapon ) {
 		weapon->EnterCinematic();
    	}
-	HideCrosshair();
+// PTP: keep the crosshair; the unarmed President aims his squad orders with it.
+// (Camera cinematics never draw the cursor, see DrawHUD.)
+//	HideCrosshair();
 }
 
 /*
@@ -13487,6 +13508,169 @@ idPlayer::SetHudOverlay
 void idPlayer::SetHudOverlay( idUserInterface* overlay, int duration ) {
 	overlayHud = overlay;
 	overlayHudTime = gameLocal.time + duration;
+}
+
+/*
+=====================
+idPlayer::ToggleHelpScreen
+
+PTP: Tab (impulse 19) and the ptp_help command show guis/help.gui as a hud
+overlay until pressed again. Same FindGui / SetHudOverlay path as
+rvTrigger_HelpScreen. Pressing it while any overlay is up hides that overlay.
+=====================
+*/
+void idPlayer::ToggleHelpScreen( void ) {
+	if ( overlayHud && overlayHudTime > gameLocal.time ) {
+		SetHudOverlay( NULL, 0 );
+		return;
+	}
+
+	idUserInterface *helpGui = uiManager->FindGui( "guis/help.gui", true, false, true );
+	if ( !helpGui ) {
+		gameLocal.Warning( "idPlayer::ToggleHelpScreen: could not load 'guis/help.gui'" );
+		return;
+	}
+	// one hour: effectively stays up until toggled off
+	SetHudOverlay( helpGui, 60 * 60 * 1000 );
+}
+
+/*
+=====================
+PTP_SpawnOrderTether
+
+PTP: spawns a stock ai_tether_radius (def/ai.def) for a squad order. "location" "0"
+keeps the tether from creating a location entity at runtime (see
+rvAITether::Event_TetherSetupLocation), and "allowBreak" "0" keeps it holding
+when an enemy gets close.
+=====================
+*/
+static rvAITether *PTP_SpawnOrderTether( const idVec3 &origin, float radius ) {
+	idDict		args;
+	idEntity	*ent = NULL;
+
+	args.Set( "classname", "ai_tether_radius" );
+	args.SetVector( "origin", origin );
+	args.SetFloat( "radius", radius );
+	args.Set( "location", "0" );
+	args.Set( "allowBreak", "0" );
+	args.Set( "ptp_order_tether", "1" );
+	if ( !gameLocal.SpawnEntityDef( args, &ent ) || !ent ) {
+		gameLocal.Warning( "PTP_SpawnOrderTether: could not spawn ai_tether_radius" );
+		return NULL;
+	}
+	if ( !ent->IsType( rvAITether::GetClassType() ) ) {
+		ent->PostEventMS( &EV_Remove, 0 );
+		return NULL;
+	}
+	return static_cast<rvAITether *>( ent );
+}
+
+/*
+=====================
+idPlayer::IssueSquadOrder
+
+PTP: keys 1-4 (impulses 0-3) and the ptp_attack / ptp_protect / ptp_wait /
+ptp_scatter commands. Squad members are found by their "ptp_squad" spawnArg,
+like Cmd_PTPSquad_f. Every order first clears the previous one (tethers dropped,
+order tether entities removed, leader back to the President); issuing the
+active order again just turns it off, so each key is a toggle.
+=====================
+*/
+void idPlayer::IssueSquadOrder( int order ) {
+	static const char *orderNames[ PTP_NUM_ORDERS ] = { "Attack", "Protect", "Wait", "Scatter" };
+	idList<idAI *>	squad;
+	idEntity		*ent;
+	int				i;
+
+	if ( order < 0 || order >= PTP_NUM_ORDERS ) {
+		return;
+	}
+	if ( order != PTP_ORDER_WAIT && order != PTP_ORDER_PROTECT ) {
+		gameLocal.Printf( "ptp: the %s order is not in yet\n", orderNames[ order ] );
+		return;
+	}
+
+	for ( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+		if ( ent->spawnArgs.GetBool( "ptp_squad" ) && ent->IsType( idAI::GetClassType() ) && ent->health > 0 ) {
+			squad.Append( static_cast<idAI *>( ent ) );
+		}
+	}
+	if ( !squad.Num() ) {
+		gameLocal.Printf( "ptp: no squad to order (use ptp_squad)\n" );
+		return;
+	}
+
+	// the active order lives in the squad's spawnArgs, so it survives save / load
+	int activeOrder = squad[ 0 ]->spawnArgs.GetInt( "ptp_order", "-1" );
+
+	// clear the previous order: back to the default, following the President
+	for ( i = 0; i < squad.Num(); i++ ) {
+		squad[ i ]->SetTether( NULL );
+		squad[ i ]->SetLeader( this );
+		squad[ i ]->spawnArgs.SetInt( "ptp_order", -1 );
+	}
+	for ( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+		if ( ent->spawnArgs.GetBool( "ptp_order_tether" ) ) {
+			ent->PostEventMS( &EV_Remove, 0 );
+		}
+	}
+
+	// pressing the active order's key again turns it off
+	if ( order == activeOrder ) {
+		gameLocal.Printf( "ptp: %s off, squad following (%d squad members)\n", orderNames[ order ], squad.Num() );
+		return;
+	}
+
+	for ( i = 0; i < squad.Num(); i++ ) {
+		squad[ i ]->spawnArgs.SetInt( "ptp_order", order );
+	}
+
+	switch ( order ) {
+		case PTP_ORDER_PROTECT: {
+			// close guard: an even ring around the President that moves with him. Each member
+			// gets its own slot tether bound to the player (stock tethers already support being
+			// bound to movers), keeps ranged attacks inside it, and "allowBreak" "0" stops them
+			// chasing enemies out of it.
+			const float		ringRadius = 192.0f;
+			const float		slotRadius = 80.0f;
+			idVec3			center = GetPhysics()->GetOrigin();
+			idList<idVec3>	slots;
+
+			for ( i = 0; i < squad.Num(); i++ ) {
+				slots.Append( center + idAngles( 0.0f, viewAngles.yaw + i * 360.0f / squad.Num(), 0.0f ).ToForward() * ringRadius );
+			}
+			// each member takes the nearest free slot so they don't cross paths
+			for ( i = 0; i < squad.Num(); i++ ) {
+				const idVec3 &pos = squad[ i ]->GetPhysics()->GetOrigin();
+				int best = 0;
+				for ( int j = 1; j < slots.Num(); j++ ) {
+					if ( ( slots[ j ] - pos ).LengthSqr() < ( slots[ best ] - pos ).LengthSqr() ) {
+						best = j;
+					}
+				}
+				rvAITether *tether = PTP_SpawnOrderTether( slots[ best ], slotRadius );
+				slots.RemoveIndex( best );
+				if ( tether ) {
+					tether->Bind( this, false );
+					squad[ i ]->SetTether( tether );
+				}
+			}
+			break;
+		}
+		case PTP_ORDER_WAIT:
+			// halt where they stand: no leader and a tight tether on their own spot. Tethered
+			// AI drop follow / melee / flanking but keep ranged attacks (idAI::FilterTactical).
+			for ( i = 0; i < squad.Num(); i++ ) {
+				squad[ i ]->SetLeader( NULL );
+				rvAITether *tether = PTP_SpawnOrderTether( squad[ i ]->GetPhysics()->GetOrigin(), 64.0f );
+				if ( tether ) {
+					squad[ i ]->SetTether( tether );
+				}
+			}
+			break;
+	}
+
+	gameLocal.Printf( "ptp: %s on (%d squad members)\n", orderNames[ order ], squad.Num() );
 }
 
 // RAVEN BEGIN

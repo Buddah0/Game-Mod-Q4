@@ -11,9 +11,9 @@ windowDef Desktop {
 		windowDef HelpTitle {
 			rect		20, 15, 440, 40
 			forecolor	1, 0.8, 0.2, 1
-			textscale	0.5
+			textscale	0.45
 			font		"fonts/marine"
-			text		"ROCKET MOD - HELP"
+			text		"PROTECT THE PRESIDENT"
 			visible		1
 		}
 
@@ -24,20 +24,20 @@ windowDef Desktop {
 		}
 
 		windowDef HelpText {
-			rect		20, 70, 440, 270
+			rect		20, 68, 440, 245
 			forecolor	0.9, 0.9, 0.9, 1
-			textscale	0.28
+			textscale	0.26
 			font		"fonts/marine"
-			text		"Welcome to the Rocket Mod!\n\nFEATURES:\n- Enhanced rocket launcher with increased damage\n- Faster rocket travel speed\n- Improved explosion effects\n\nCONTROLS:\nWASD - Move\nMouse - Aim\nLeft Click - Fire weapon\nR - Reload\nScroll Wheel - Change weapon\n\nTIP: Aim at enemy feet for splash damage!"
+			text		"Hello, and welcome to Protect The President! You, the president, under the crushing weight of war stepped into the fray to complete vital objectives! But you are NOT a soldier, you have men ready to aid and defend you all the way to extraction. You will hit checkpoints to replenish your men as you advance, but try not to treat them like meat shields!\n\nCONTROLS:\n1: Attack\n2: Protect\n3: Wait\n4: Scatter"
 			visible		1
 		}
 
 		windowDef DismissText {
-			rect		20, 320, 440, 25
+			rect		20, 325, 440, 25
 			forecolor	0.6, 0.6, 0.6, 1
 			textscale	0.22
 			font		"fonts/marine"
-			text		"This screen will dismiss automatically..."
+			text		"TAB - show / hide this screen"
 			visible		1
 		}
 	}

@@ -192,6 +192,15 @@ typedef enum {
 
 const int	ASYNC_PLAYER_TOURNEY_STATUS_BITS = idMath::BitsForInteger( PTS_NUM_STATES );
 
+// PTP: squad orders, numbered like keys 1-4 (impulses 0-3)
+typedef enum {
+	PTP_ORDER_ATTACK = 0,
+	PTP_ORDER_PROTECT,
+	PTP_ORDER_WAIT,
+	PTP_ORDER_SCATTER,
+	PTP_NUM_ORDERS
+} ptpOrder_t;
+
 class idInventory {
 public:
 	int						maxHealth;
@@ -760,6 +769,8 @@ public:
 	void					ClientInstanceLeave( void );
 
 	void					SetHudOverlay( idUserInterface* overlay, int duration );
+	void					ToggleHelpScreen( void );
+	void					IssueSquadOrder( int order );
 
 	void					SetShowHud( bool showHud );
 	bool					GetShowHud( void );

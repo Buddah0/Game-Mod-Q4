@@ -1,0 +1,167 @@
+/*
+===============================================================================
+
+	Protect the President - Protection Squad
+
+	Five support NPC builds that escort and defend the (unarmed) President.
+	Each build inherits a stock Quake 4 marine def, so models, animations,
+	weapons and AI behavior are reused; only the tuning below is custom.
+
+	Common keys on every squad member:
+		"leader"	"player1"	follow the President from spawn
+		"follows"	"1"			click (talk) toggles follow / stop following
+		"ptp_squad"	"1"			tag used by the ptp_squad console command
+
+	Spawn the whole squad with the console command:  ptp_squad
+
+===============================================================================
+*/
+
+/*
+===============================================================================
+	Marksman attack: slow, accurate, high-damage shot with a railgun trail
+===============================================================================
+*/
+entityDef damage_ptp_marksman {
+	"inherit"					"damage_bullet_base"
+	"damage"					"60"
+	"deathPush"					"150"
+	"deathPushMin"				"4000 750"
+	"deathPushMax"				"6750 1250"
+}
+
+entityDef hitscan_ptp_marksman {
+	"inherit"					"hitscan_bullet_base"
+	"def_damage"				"damage_ptp_marksman"
+	"fx_path"					"effects/weapons/railgun/trail.fx"
+	"tracerchance"				"0"
+}
+
+/*
+===============================================================================
+	Marksman "Overwatch" - long range precision, hangs back, fragile
+===============================================================================
+*/
+entityDef ptp_marksman {
+	"inherit"						"char_marine"
+	"editor_ignore"					"0"
+	"editor_usage"					"Protect the President squad: Marksman (long range precision)."
+
+	"leader"						"player1"
+	"follows"						"1"
+	"ptp_squad"						"1"
+	"npc_name"						"Overwatch"
+	"npc_description"				"Marksman - long range"
+	"def_head"						"char_marinehead_gen_asian"
+	"skin"							"skins/models/characters/marine/viper"
+
+	"health"						"100"
+	"attackRange"					"400 2000"
+	"tactical_rush"					"0"
+
+	"ammo"							"10"
+	"fireRate"						"1.2"
+	"minShots"						"1"
+	"maxShots"						"2"
+	"actionTimer_rangedAttack_rate"	"1.5"
+	"action_rangedAttack_rate"		"1.5"
+
+	"def_attack_base"				"hitscan_ptp_marksman"
+	"attack_base_hitscan"			"1"
+	"attack_base_accuracy"			".25"
+	"attack_base_spread"			"0"
+	"def_attack_killswitch"			"hitscan_ptp_marksman"
+	"attack_killswitch_hitscan"		"1"
+	"attack_killswitch_accuracy"	".25"
+	"attack_killswitch_spread"		"0"
+}
+
+/*
+===============================================================================
+	Breacher "Ram" - close quarters shotgun, the tank, regenerates health
+===============================================================================
+*/
+entityDef ptp_breacher {
+	"inherit"						"char_marine_shotgun"
+	"editor_ignore"					"0"
+	"editor_usage"					"Protect the President squad: Breacher (close quarters tank)."
+
+	"leader"						"player1"
+	"follows"						"1"
+	"ptp_squad"						"1"
+	"npc_name"						"Ram"
+	"npc_description"				"Breacher - close quarters"
+	"def_head"						"char_marinehead_helmet"
+	"skin"							"skins/models/characters/marine/kodiak"
+
+	"health"						"200"
+	"healthRegenEnabled"			"1"
+	"healthRegen"					"2"
+}
+
+/*
+===============================================================================
+	Gunner "Thunder" - suppressing fire, long projectile bursts
+===============================================================================
+*/
+entityDef ptp_gunner {
+	"inherit"						"char_marine_hyperblaster"
+	"editor_ignore"					"0"
+	"editor_usage"					"Protect the President squad: Gunner (suppressing fire)."
+
+	"leader"						"player1"
+	"follows"						"1"
+	"ptp_squad"						"1"
+	"npc_name"						"Thunder"
+	"npc_description"				"Gunner - suppressing fire"
+	"def_head"						"char_marinehead_gen_african_american_2"
+	"skin"							"skins/models/characters/marine/badger"
+
+	"health"						"150"
+	"ammo"							"120"
+	"minShots"						"10"
+	"maxShots"						"30"
+	"attack_base_accuracy"			"2"
+}
+
+/*
+===============================================================================
+	Medic "Doc" - heals the President's health (stock rvAIMedic), machinegun
+===============================================================================
+*/
+entityDef ptp_medic {
+	"inherit"						"char_marine_medic_armed"
+	"editor_ignore"					"0"
+	"editor_usage"					"Protect the President squad: Medic (restores health)."
+
+	"leader"						"player1"
+	"follows"						"1"
+	"ptp_squad"						"1"
+	"npc_name"						"Doc"
+	"npc_description"				"Medic - restores health"
+
+	"health"						"125"
+}
+
+/*
+===============================================================================
+	Engineer "Wrench" - repairs the President's armor (rvAIMedic tech), shotgun
+	Same two-parent pattern as stock char_marine_tech_armed, shotgun instead of
+	machinegun.
+===============================================================================
+*/
+entityDef ptp_engineer {
+	"inherit1"						"char_marine_tech_extras"
+	"inherit2"						"char_marine_shotgun"
+	"editor_ignore"					"0"
+	"editor_usage"					"Protect the President squad: Engineer (repairs armor)."
+	"def_head"						"char_marinehead_helmet_tech"
+
+	"leader"						"player1"
+	"follows"						"1"
+	"ptp_squad"						"1"
+	"npc_name"						"Wrench"
+	"npc_description"				"Engineer - repairs armor"
+
+	"health"						"125"
+}

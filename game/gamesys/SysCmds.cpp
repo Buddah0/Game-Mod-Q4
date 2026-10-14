@@ -1158,6 +1158,161 @@ void Cmd_Spawn_f( const idCmdArgs &args ) {
 #endif // !_MPBETA
 }
 
+/*
+===================
+PTP_FindSquadSpot
+
+Finds a spawn spot for one squad member up to 'radius' away from the player
+along 'yaw'. A marine-sized box ("size" "32 32 72" on char_marine_base) is
+swept out from the player so walls and props at any height stop it, then
+swept down onto the floor (drops are rejected), and the final spot must not
+overlap anything solid or any body, including squad members placed before it.
+Same box-sweep pattern as AAS_debug.cpp.
+===================
+*/
+static bool PTP_FindSquadSpot( idPlayer *player, float yaw, float radius, idVec3 &spot ) {
+	const float		minDist = 40.0f;	// player + marine half-widths + margin
+	const float		stepUp = 16.0f;		// lift over small lips and slopes
+	const float		maxDrop = 64.0f;	// deeper than this is a ledge, not floor
+	const idBounds	marineBounds( idVec3( -16.0f, -16.0f, 0.0f ), idVec3( 16.0f, 16.0f, 72.0f ) );
+	idTraceModel	trm( marineBounds );
+	idClipModel		mdl;
+	idVec3			dir = idAngles( 0.0f, yaw, 0.0f ).ToForward();
+	idVec3			start = player->GetPhysics()->GetOrigin() + idVec3( 0.0f, 0.0f, stepUp );
+	trace_t			tr;
+
+	mdl.LoadModel( trm, NULL );
+
+	// out from the player, stopped by level geometry only (starting in solid gives fraction 0)
+	gameLocal.Translation( player, tr, start, start + dir * radius, &mdl, mat3_identity, CONTENTS_SOLID|CONTENTS_MONSTERCLIP, player );
+	if ( tr.fraction * radius < minDist ) {
+		return false;
+	}
+
+	// down onto the floor
+	idVec3 top = tr.endpos;
+	gameLocal.Translation( player, tr, top, top - idVec3( 0.0f, 0.0f, stepUp + maxDrop ), &mdl, mat3_identity, CONTENTS_SOLID|CONTENTS_MONSTERCLIP, player );
+	if ( tr.fraction >= 1.0f ) {
+		return false;
+	}
+	spot = tr.endpos + idVec3( 0.0f, 0.0f, 1.0f );
+
+	// nothing solid and no body (enemies, NPCs, earlier squad members) in the way;
+	// this also rejects a down sweep that started inside something
+	if ( gameLocal.Contents( player, spot, &mdl, mat3_identity, MASK_MONSTERSOLID, player ) ) {
+		return false;
+	}
+	return true;
+}
+
+/*
+===================
+Cmd_PTPSquad_f
+
+Spawns the President's protection squad (def/ptp_squad.def) in a semicircle
+behind the player. A member whose spot doesn't fit tries fallback spots: a
+second row straight behind, where the player just came from, then the sides
+and finally in front. Any squad already in the level is removed first, so
+running the command again re-deploys the squad instead of stacking duplicates.
+===================
+*/
+void Cmd_PTPSquad_f( const idCmdArgs &args ) {
+#ifndef _MPBETA
+	static const char *	squadDefs[] = { "ptp_marksman", "ptp_breacher", "ptp_gunner", "ptp_medic", "ptp_engineer" };
+	static const float	squadYaw[]  = { 0.0f, -40.0f, 40.0f, -80.0f, 80.0f };
+	// relative to straight behind the player
+	static const float	fallbackYaw[] = { -15.0f, 15.0f, 0.0f, -130.0f, 130.0f, 180.0f };
+	const int			numSquad = sizeof( squadDefs ) / sizeof( squadDefs[ 0 ] );
+	const int			numFallback = sizeof( fallbackYaw ) / sizeof( fallbackYaw[ 0 ] );
+	const float			radius = 100.0f;
+	const float			fallbackRadius = 160.0f;
+	idEntity			*ent;
+	idPlayer			*player;
+	int					i, spawned, fallback;
+
+	player = gameLocal.GetLocalPlayer();
+	if ( !player || player->health <= 0 ) {
+		return;
+	}
+
+	// remove the previous squad and its order tethers (a new squad starts out following);
+	// hiding makes the AI non-solid right away (idAI::Hide), so the bodies being
+	// removed don't block the new spawn spots
+	for( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+		if ( ent->spawnArgs.GetBool( "ptp_squad" ) || ent->spawnArgs.GetBool( "ptp_order_tether" ) ) {
+			ent->Hide();
+			ent->PostEventMS( &EV_Remove, 0 );
+		}
+	}
+
+	float yaw = player->viewAngles.yaw;
+
+	spawned = 0;
+	fallback = 0;
+	for( i = 0; i < numSquad; i++ ) {
+		// slot behind the player, pulled in if something is in the way
+		idVec3 spot;
+		bool found = PTP_FindSquadSpot( player, yaw + 180.0f + squadYaw[ i ], radius, spot );
+		while ( !found && fallback < numFallback ) {
+			found = PTP_FindSquadSpot( player, yaw + 180.0f + fallbackYaw[ fallback++ ], fallbackRadius, spot );
+		}
+		if ( !found ) {
+			gameLocal.Warning( "ptp_squad: no room to spawn '%s'", squadDefs[ i ] );
+			continue;
+		}
+
+		idDict dict;
+		dict.Set( "classname", squadDefs[ i ] );
+		dict.Set( "angle", va( "%f", yaw ) );
+		dict.Set( "origin", spot.ToString() );
+
+		ent = NULL;
+		if ( gameLocal.SpawnEntityDef( dict, &ent ) && ent ) {
+			spawned++;
+		}
+	}
+
+	gameLocal.Printf( "ptp_squad: spawned %d/%d\n", spawned, numSquad );
+#endif // !_MPBETA
+}
+
+/*
+===================
+Cmd_PTPHelp_f
+
+Shows / hides the Protect the President help screen, same as Tab.
+===================
+*/
+void Cmd_PTPHelp_f( const idCmdArgs &args ) {
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	if ( !player ) {
+		return;
+	}
+	player->ToggleHelpScreen();
+}
+
+/*
+===================
+Cmd_PTPOrder_f
+
+Issues a squad order, same as keys 1-4. Registered as ptp_attack, ptp_protect,
+ptp_wait and ptp_scatter; the command name picks the order.
+===================
+*/
+void Cmd_PTPOrder_f( const idCmdArgs &args ) {
+	static const char *orderCmds[ PTP_NUM_ORDERS ] = { "ptp_attack", "ptp_protect", "ptp_wait", "ptp_scatter" };
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	if ( !player ) {
+		return;
+	}
+	for ( int i = 0; i < PTP_NUM_ORDERS; i++ ) {
+		if ( !idStr::Icmp( args.Argv( 0 ), orderCmds[ i ] ) ) {
+			player->IssueSquadOrder( i );
+			return;
+		}
+	}
+}
+
 // RAVEN BEGIN
 // ddynerman: MP spawning command for performance testing
 /*
@@ -3078,6 +3233,12 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "teleport",				Cmd_Teleport_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"teleports the player to an entity location", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "trigger",				Cmd_Trigger_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"triggers an entity", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "spawn",					Cmd_Spawn_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"spawns a game entity", idCmdSystem::ArgCompletion_Decl<DECL_ENTITYDEF> );
+	cmdSystem->AddCommand( "ptp_squad",				Cmd_PTPSquad_f,				CMD_FL_GAME,				"spawns the President's 5-member protection squad" );
+	cmdSystem->AddCommand( "ptp_help",				Cmd_PTPHelp_f,				CMD_FL_GAME,				"shows / hides the Protect the President help screen (same as Tab)" );
+	cmdSystem->AddCommand( "ptp_attack",			Cmd_PTPOrder_f,				CMD_FL_GAME,				"squad order: attack where you aim (key 1)" );
+	cmdSystem->AddCommand( "ptp_protect",			Cmd_PTPOrder_f,				CMD_FL_GAME,				"squad order: stay close and protect you (key 2)" );
+	cmdSystem->AddCommand( "ptp_wait",				Cmd_PTPOrder_f,				CMD_FL_GAME,				"squad order: hold position (key 3)" );
+	cmdSystem->AddCommand( "ptp_scatter",			Cmd_PTPOrder_f,				CMD_FL_GAME,				"squad order: spread out around you (key 4)" );
 	cmdSystem->AddCommand( "damage",				Cmd_Damage_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"apply damage to an entity", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "remove",				Cmd_Remove_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"removes an entity", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "killMonsters",			Cmd_KillMonsters_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"removes all monsters" );

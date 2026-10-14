@@ -121,7 +121,56 @@ Live shortcut (`C:\Users\loren\OneDrive\Desktop\Quake4.lnk`), read read-only tod
   - **Old squad hidden first:** the old squad is `Hide()`n before removal; `idAI::Hide` sets contents to 0 and unlinks the clip, so the old bodies don't block the new spots. Old order tethers are also removed on re-deploy.
   - **Fallback spots** at 160 units, relative to straight behind: -15, +15, 0, -130, +130, then 180 (in front, last resort). A member is only skipped if every spot fails.
   - This spawn logic will later back a checkpoint trigger that tops up the squad, so it must not fail in normal play.
-- **Next:** Attack, then Scatter, plus the HUD order panel (4c). Each must work as a toggle.
+- **Checkpoint commit `2ab40d3` (2026-10-14)** on `personal_deliverable_2`, containing only the 8 PTP files.
+  - The project-upgrade files, `mpgame/gamesys` edits and `.vs/` noise that were already staged before this work were left staged and uncommitted, because they aren't PTP work. The user decides about those.
+- **The `ptp_squad` v3 box-sweep spawn is confirmed:** all 5 are visible even at the problem wall.
+- **Attack (key 1): built and deployed, awaiting test.**
+  - **Aim spot:** `PTP_FindAttackSpot` (`Player.cpp`) traces from the eye along the view, 4096 units, `MASK_SHOT_BOUNDINGBOX`, the same pattern as `Cmd_AI_DebugFilter_f`. It steps back 24 units off the hit, then point-traces down up to 1024 units onto the floor.
+  - **Reachability:** the spot must pass `squad[0]->PointReachableAreaNum()`. A bad aim (sky, no floor, no AAS) prints a message and **changes nothing**; the aim is validated before the previous order is cleared.
+  - **The order:** `SetLeader(NULL)` and one shared 128-unit `ai_tether_radius` at the spot.
+    - `allowBreak 1`: they leave the zone while an enemy is inside it, so they really engage, and return once it's clear.
+    - `forceRun 1`: they run there.
+  - `PTP_SpawnOrderTether` gained optional `allowBreak` / `forceRun` parameters (both false by default, so Wait and Protect are unchanged).
+- **Attack is confirmed in game:** the squad runs to the aim point, fights there, and comes back on a second press of 1.
+- **Scatter (key 4): built and deployed, awaiting test.**
+  - **Slots:** an even ring 256 units from the President, starting at his view yaw. Each slot is pulled in to 32 units short of any wall hit by a waist-height trace, so no zone sits behind a wall.
+  - **Zones:** each member gets a static 128-unit `ai_tether_radius` (not bound) with `allowBreak 1` and `forceRun 1`, and `SetLeader(NULL)`.
+  - **Shared helper:** `PTP_TetherSquadToSlots( squad, slots, radius, allowBreak, forceRun, bindTo )` holds the nearest-free-slot assignment that Protect (bound to the player) and Scatter (unbound) now share.
+- **Scatter v1 feedback:** too tight; near a wall it looked like Protect; the user wants **forward** fighting positions that don't crowd the President. Members also get stuck on props, which is partly stock Quake 4 AI.
+- **Scatter v2: confirmed better in game (2026-10-14).**
+  - **Shape:** a forward "arrowhead" arc from the view yaw: 0° at 448 units, ±35° at 384, ±70° at 320. That's about 600 units wide with 220–260 units between neighbors.
+  - **Spot checks:** `PTP_FindScatterSpot` pulls each spot back 48 units off walls, drops it to the floor (512-unit down trace) and requires `PointReachableAreaNum`; it retries at half distance.
+  - **Zones:** static 128-unit tethers with `allowBreak` and `forceRun`, leader NULL.
+  - **Fallback:** members without a valid spot keep following (`GetTether() == NULL`, so `SetLeader(player)`).
+- **All four orders are implemented, and each is a toggle.**
+- **CD key prompt is back on `map game/airdefense1` (diagnosed 2026-10-14; no code changed yet, at the user's request):**
+  - **No GUI involved:** every stock GUI was grepped. Only `mainmenu.gui` calls `checkKeys` / `promptKey`, and our deployed copy keeps only the manual "CD Key" settings button. So this prompt comes from the **engine** (Quake4.exe, not in the SDK).
+  - **The key file is unchanged:** `q4base\quake4key` has the same hash as before the Steam verify, and Steam ships the same file to every owner.
+  - **The exe has id's master-server key check:** `authing with the master..`, `auth key is invalid`, and `auth message from master. net_LANServer is enabled, ignored.` The built-in master is `q4master.idsoftware.com`. When the master answers "invalid", the next key check pops the prompt. That would explain why it's intermittent (it depends on whether and when the reply arrives).
+  - ~~Likely fix: `net_LANServer 1`~~. **Wrong: it was the cause.** See RESOLVED below.
+  - **LAN test result (2026-10-14): `net_LANServer 1` did NOT fix it.** The log goes to `q4base\qconsole.log` (the engine's choice).
+    - **The "crash" is not a crash.** The log shows the map loading fully after `map`, then a clean, orderly shutdown with no error and no crash report.
+    - That is id's stock behavior: **Cancel or Esc on the forced CD key prompt queues `quit`**.
+    - Loading a savegame never prompted, but `map` did. Starting a new game runs id's **strict** key check, which needs an OK from the master server.
+  - **The exe has 7 code references to `promptKey force`** (found by scanning `.text` for the string's address). The GUI `checkKeys` was only one of them; the rest are engine code we can't reach.
+  - **No setting disables it:** the only related console variables are `net_LANServer`, `net_LANRepeater`, `net_menuLANServer` and `net_master0-4`.
+  - **No registry CD key**, so the key lives only in `q4base\quake4key`, whose hash is unchanged.
+  - **LAN mode ignores master replies**, so the strict check can't pass. The test also persisted `seta net_LANServer "1"`.
+  - **Not doing:** exe patches or code that bypasses the key check.
+  - **RESOLVED 2026-10-14: `map` works with no prompt** (confirmed by the user and the log).
+    - **What works:** with `net_LANServer 0`, Quake 4 runs its key check at launch (`Opening IP socket` → `authing with the master..` → `no reply from auth`). No reply counts as OK, so `map`'s strict check passes.
+    - **Final test log:** two `map game/airdefense1` loads, with `ptp_squad` and Scatter in between, and no prompt.
+  - **Root cause of the persistent prompt: LAN mode stops the check from ever running.** The LAN test left `seta net_LANServer "1"` in the mod config. With it, no auth starts, the key never gets its OK, and `map` always prompts. **Never set `net_LANServer 1`.**
+  - **Our DLL was ruled out.**
+    - An automated harness swapped DLLs into `ABRACADABRA\game000.pk4`, launched with logging, checked for the auth line, closed the game, and restored our pk4 with a hash check.
+    - Results: `eefd0b2` build, `2ab40d3` build, and the current deployed build were all `AUTH=True`.
+    - An earlier "the DLL is the cause" conclusion was confounded by the leftover LAN config.
+  - **Still possible, not seen in any log:** id's master server actually replying "auth key is invalid". If a prompt ever returns with LAN at 0, launch once with `+set logFile 2 +set developer 1` and look for that line in `q4base\qconsole.log`.
+  - **Final state:** the shortcut and `PTP_Launch.bat` are `+set fs_game ABRACADABRA`, and the mod config has `seta net_LANServer "0"`.
+  - **README note for graders:** keep multiplayer LAN mode off (`net_LANServer 0`). Quake 4's own CD key prompt quits the game on Cancel.
+- **Key 4 bind fixed (2026-10-14):** the user's `ABRACADABRA\Quake4Config.cfg` now has `bind "4" "_impulse3"` and `bind "5" "_impulse4"` (stock). It was edited with Quake 4 closed and backed up first.
+- **README.md written (2026-10-14):** concept (the help text verbatim), squad table, controls, console commands, install and launch, notes (LAN mode off, CD key prompt), building from source, and "coming soon". There's a copy in `ABRACADABRA\README.md`. Objectives get added once they're chosen.
+- **Next:** the HUD order panel (4c, "1 Attack 2 Protect 3 Wait 4 Scatter" with the active order highlighted). Then the map, objectives, extraction holdout, the README objectives section and pak001.pk4.
 
 ### 4b. How each order maps onto existing AI code (all in `game/ai`)
 All squad iteration uses the `spawnedEntities` + `ptp_squad` tag idiom. Orders need to run **inside `idAI`** (a new public method or `friend`), because `MoveTo(pos)` is `protected` (`AI.h:974`), and `rvAITether` and `SetTether` / `SetLeader` are already public (`AI.h:830, 912`).

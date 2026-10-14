@@ -13540,11 +13540,11 @@ PTP_SpawnOrderTether
 
 PTP: spawns a stock ai_tether_radius (def/ai.def) for a squad order. "location" "0"
 keeps the tether from creating a location entity at runtime (see
-rvAITether::Event_TetherSetupLocation), and "allowBreak" "0" keeps it holding
-when an enemy gets close.
+rvAITether::Event_TetherSetupLocation). 'allowBreak' lets the AI leave the tether
+while an enemy is inside it (idAI::IsTethered), 'forceRun' makes them run to it.
 =====================
 */
-static rvAITether *PTP_SpawnOrderTether( const idVec3 &origin, float radius ) {
+static rvAITether *PTP_SpawnOrderTether( const idVec3 &origin, float radius, bool allowBreak = false, bool forceRun = false ) {
 	idDict		args;
 	idEntity	*ent = NULL;
 
@@ -13552,7 +13552,8 @@ static rvAITether *PTP_SpawnOrderTether( const idVec3 &origin, float radius ) {
 	args.SetVector( "origin", origin );
 	args.SetFloat( "radius", radius );
 	args.Set( "location", "0" );
-	args.Set( "allowBreak", "0" );
+	args.SetBool( "allowBreak", allowBreak );
+	args.SetBool( "forceRun", forceRun );
 	args.Set( "ptp_order_tether", "1" );
 	if ( !gameLocal.SpawnEntityDef( args, &ent ) || !ent ) {
 		gameLocal.Warning( "PTP_SpawnOrderTether: could not spawn ai_tether_radius" );
@@ -13563,6 +13564,99 @@ static rvAITether *PTP_SpawnOrderTether( const idVec3 &origin, float radius ) {
 		return NULL;
 	}
 	return static_cast<rvAITether *>( ent );
+}
+
+/*
+=====================
+PTP_TetherSquadToSlots
+
+PTP: gives each squad member its own order tether at the nearest free slot, so
+their paths don't cross. With 'bindTo' the tethers are bound to that entity and
+the slots move with it (stock tethers already support being bound to movers).
+=====================
+*/
+static void PTP_TetherSquadToSlots( idList<idAI *> &squad, idList<idVec3> &slots, float radius, bool allowBreak, bool forceRun, idEntity *bindTo ) {
+	for ( int i = 0; i < squad.Num() && slots.Num(); i++ ) {
+		const idVec3 &pos = squad[ i ]->GetPhysics()->GetOrigin();
+		int best = 0;
+		for ( int j = 1; j < slots.Num(); j++ ) {
+			if ( ( slots[ j ] - pos ).LengthSqr() < ( slots[ best ] - pos ).LengthSqr() ) {
+				best = j;
+			}
+		}
+		rvAITether *tether = PTP_SpawnOrderTether( slots[ best ], radius, allowBreak, forceRun );
+		slots.RemoveIndex( best );
+		if ( tether ) {
+			if ( bindTo ) {
+				tether->Bind( bindTo, false );
+			}
+			squad[ i ]->SetTether( tether );
+		}
+	}
+}
+
+/*
+=====================
+PTP_FindAttackSpot
+
+PTP: the floor spot the President is aiming at, for the Attack order. Aim trace
+like Cmd_AI_DebugFilter_f, stepped back off whatever was hit, then down onto the
+floor; the spot must be in the squad's AAS or the tether could never find goals.
+=====================
+*/
+static bool PTP_FindAttackSpot( idPlayer *player, idAI *ai, idVec3 &spot ) {
+	idVec3	start = player->GetEyePosition();
+	idVec3	dir = player->viewAngles.ToForward();
+	trace_t	tr;
+
+	gameLocal.TracePoint( player, tr, start, start + dir * 4096.0f, MASK_SHOT_BOUNDINGBOX, player );
+	if ( tr.fraction >= 1.0f ) {
+		return false;	// aimed at nothing
+	}
+
+	idVec3 above = tr.endpos - dir * 24.0f;
+	gameLocal.TracePoint( player, tr, above, above - idVec3( 0.0f, 0.0f, 1024.0f ), CONTENTS_SOLID|CONTENTS_MONSTERCLIP, player );
+	if ( tr.fraction >= 1.0f ) {
+		return false;	// no floor below
+	}
+	spot = tr.endpos + idVec3( 0.0f, 0.0f, 1.0f );
+
+	return ai->aas && ai->PointReachableAreaNum( spot ) != 0;
+}
+
+/*
+=====================
+PTP_FindScatterSpot
+
+PTP: a fighting position for Scatter, up to 'dist' out from the President along
+'yaw'. Pulled back off any wall in the way, dropped onto the floor and checked
+against the squad's AAS like PTP_FindAttackSpot; tries half the distance before
+giving up.
+=====================
+*/
+static bool PTP_FindScatterSpot( idPlayer *player, idAI *ai, float yaw, float dist, idVec3 &spot ) {
+	const idVec3	waist( 0.0f, 0.0f, 36.0f );
+	const idVec3	&origin = player->GetPhysics()->GetOrigin();
+	idVec3			dir = idAngles( 0.0f, yaw, 0.0f ).ToForward();
+	trace_t			tr;
+
+	for ( int tries = 0; tries < 2; tries++, dist *= 0.5f ) {
+		gameLocal.TracePoint( player, tr, origin + waist, origin + waist + dir * dist, CONTENTS_SOLID|CONTENTS_MONSTERCLIP, player );
+		float d = tr.fraction * dist - 48.0f;
+		if ( d < 64.0f ) {
+			continue;
+		}
+		idVec3 above = origin + waist + dir * d;
+		gameLocal.TracePoint( player, tr, above, above - idVec3( 0.0f, 0.0f, 512.0f ), CONTENTS_SOLID|CONTENTS_MONSTERCLIP, player );
+		if ( tr.fraction >= 1.0f ) {
+			continue;
+		}
+		spot = tr.endpos + idVec3( 0.0f, 0.0f, 1.0f );
+		if ( ai->aas && ai->PointReachableAreaNum( spot ) ) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /*
@@ -13585,10 +13679,6 @@ void idPlayer::IssueSquadOrder( int order ) {
 	if ( order < 0 || order >= PTP_NUM_ORDERS ) {
 		return;
 	}
-	if ( order != PTP_ORDER_WAIT && order != PTP_ORDER_PROTECT ) {
-		gameLocal.Printf( "ptp: the %s order is not in yet\n", orderNames[ order ] );
-		return;
-	}
 
 	for ( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
 		if ( ent->spawnArgs.GetBool( "ptp_squad" ) && ent->IsType( idAI::GetClassType() ) && ent->health > 0 ) {
@@ -13602,6 +13692,13 @@ void idPlayer::IssueSquadOrder( int order ) {
 
 	// the active order lives in the squad's spawnArgs, so it survives save / load
 	int activeOrder = squad[ 0 ]->spawnArgs.GetInt( "ptp_order", "-1" );
+
+	// Attack needs a reachable spot where the President aims; a bad aim changes nothing
+	idVec3 attackSpot = vec3_origin;
+	if ( order == PTP_ORDER_ATTACK && order != activeOrder && !PTP_FindAttackSpot( this, squad[ 0 ], attackSpot ) ) {
+		gameLocal.Printf( "ptp: the squad can't get there, aim at floor they can reach\n" );
+		return;
+	}
 
 	// clear the previous order: back to the default, following the President
 	for ( i = 0; i < squad.Num(); i++ ) {
@@ -13626,11 +13723,23 @@ void idPlayer::IssueSquadOrder( int order ) {
 	}
 
 	switch ( order ) {
+		case PTP_ORDER_ATTACK: {
+			// run to where the President aims and fight there: no leader and one shared tether
+			// at the spot. "allowBreak" lets them leave it while an enemy is inside it, so they
+			// actually engage, and they fall back into the zone once it is clear.
+			rvAITether *tether = PTP_SpawnOrderTether( attackSpot, 128.0f, true, true );
+			for ( i = 0; i < squad.Num(); i++ ) {
+				squad[ i ]->SetLeader( NULL );
+				if ( tether ) {
+					squad[ i ]->SetTether( tether );
+				}
+			}
+			break;
+		}
 		case PTP_ORDER_PROTECT: {
 			// close guard: an even ring around the President that moves with him. Each member
-			// gets its own slot tether bound to the player (stock tethers already support being
-			// bound to movers), keeps ranged attacks inside it, and "allowBreak" "0" stops them
-			// chasing enemies out of it.
+			// gets its own slot tether bound to the player, keeps ranged attacks inside it, and
+			// "allowBreak" "0" stops them chasing enemies out of it.
 			const float		ringRadius = 192.0f;
 			const float		slotRadius = 80.0f;
 			idVec3			center = GetPhysics()->GetOrigin();
@@ -13639,20 +13748,34 @@ void idPlayer::IssueSquadOrder( int order ) {
 			for ( i = 0; i < squad.Num(); i++ ) {
 				slots.Append( center + idAngles( 0.0f, viewAngles.yaw + i * 360.0f / squad.Num(), 0.0f ).ToForward() * ringRadius );
 			}
-			// each member takes the nearest free slot so they don't cross paths
-			for ( i = 0; i < squad.Num(); i++ ) {
-				const idVec3 &pos = squad[ i ]->GetPhysics()->GetOrigin();
-				int best = 0;
-				for ( int j = 1; j < slots.Num(); j++ ) {
-					if ( ( slots[ j ] - pos ).LengthSqr() < ( slots[ best ] - pos ).LengthSqr() ) {
-						best = j;
-					}
+			PTP_TetherSquadToSlots( squad, slots, slotRadius, false, false, this );
+			break;
+		}
+		case PTP_ORDER_SCATTER: {
+			// spread out ahead of the President and fight freely: no leader and a wide zone per
+			// member on an arc of fighting positions in front of him (farthest in the middle),
+			// each on floor the squad can reach. The zones stay put, "allowBreak" lets them chase
+			// enemies that come inside, and they run there. A member left without a valid
+			// position keeps following the President.
+			static const float	arcYaw[]  = { 0.0f, -35.0f, 35.0f, -70.0f, 70.0f };
+			static const float	arcDist[] = { 448.0f, 384.0f, 384.0f, 320.0f, 320.0f };
+			const int			numArc = sizeof( arcYaw ) / sizeof( arcYaw[ 0 ] );
+			const float			zoneRadius = 128.0f;
+			idList<idVec3>		slots;
+
+			for ( i = 0; i < squad.Num() && i < numArc; i++ ) {
+				idVec3 spot;
+				if ( PTP_FindScatterSpot( this, squad[ 0 ], viewAngles.yaw + arcYaw[ i ], arcDist[ i ], spot ) ) {
+					slots.Append( spot );
 				}
-				rvAITether *tether = PTP_SpawnOrderTether( slots[ best ], slotRadius );
-				slots.RemoveIndex( best );
-				if ( tether ) {
-					tether->Bind( this, false );
-					squad[ i ]->SetTether( tether );
+			}
+			for ( i = 0; i < squad.Num(); i++ ) {
+				squad[ i ]->SetLeader( NULL );
+			}
+			PTP_TetherSquadToSlots( squad, slots, zoneRadius, true, true, NULL );
+			for ( i = 0; i < squad.Num(); i++ ) {
+				if ( !squad[ i ]->GetTether() ) {
+					squad[ i ]->SetLeader( this );
 				}
 			}
 			break;

@@ -170,7 +170,18 @@ Live shortcut (`C:\Users\loren\OneDrive\Desktop\Quake4.lnk`), read read-only tod
   - **README note for graders:** keep multiplayer LAN mode off (`net_LANServer 0`). Quake 4's own CD key prompt quits the game on Cancel.
 - **Key 4 bind fixed (2026-10-14):** the user's `ABRACADABRA\Quake4Config.cfg` now has `bind "4" "_impulse3"` and `bind "5" "_impulse4"` (stock). It was edited with Quake 4 closed and backed up first.
 - **README.md written (2026-10-14):** concept (the help text verbatim), squad table, controls, console commands, install and launch, notes (LAN mode off, CD key prompt), building from source, and "coming soon". There's a copy in `ABRACADABRA\README.md`. Objectives get added once they're chosen.
-- **Next:** the HUD order panel (4c, "1 Attack 2 Protect 3 Wait 4 Scatter" with the active order highlighted). Then the map, objectives, extraction holdout, the README objectives section and pak001.pk4.
+- **HUD order panel (4c): confirmed in game (2026-10-18).** The panel shows top-left, the highlight follows keys 1-4, a second press clears it, and `ptp_squad` resets it. Save / load has not been tested in game yet.
+  - **GUI:** `guis/hud.gui` is a byte-exact copy of stock `pak021.pk4:guis/hud.gui` plus one block, `windowDef ptp_orders`, placed just before the death-fade section (it's deployed loose to `ABRACADABRA\guis\hud.gui`).
+    - The panel sits top-left at rect `8,8,294,22`, with four cells: `1 Attack`, `2 Protect`, `3 Wait`, `4 Scatter`.
+    - The active cell gets an amber background and dark text, all through `visible ("gui::ptp_order" == N)` expressions, the same idiom as stock `p_armor`.
+  - **C++ (`Player.cpp` / `Player.h`):**
+    - `UpdateHudStats` sets the HUD state int `ptp_order` from the cached `ptpHudOrder`.
+    - That value comes from the file-static `PTP_SquadOrder()`: the `"ptp_order"` spawnArg of the first live, non-hidden squad member, or -1.
+    - It's rescanned every 250 ms (`ptpHudScanTime`), and `IssueSquadOrder` forces a rescan on the next frame.
+    - Neither member is saved. A loaded save constructs a fresh player, which rescans right away, and the order itself survives in the squad's spawnArgs.
+    - `ptp_squad` needs no change: the hidden old squad is skipped, so the panel clears on the next scan.
+  - **Known limit:** stroggified maps (`player_strogg`) use `guis/hud_strogg.gui`. If the chosen map is one of them, add the same block to a copy of the stock `hud_strogg.gui` (pak014).
+- **Next:** the map, objectives, extraction holdout, the README objectives section and pak001.pk4.
 
 ### 4b. How each order maps onto existing AI code (all in `game/ai`)
 All squad iteration uses the `spawnedEntities` + `ptp_squad` tag idiom. Orders need to run **inside `idAI`** (a new public method or `friend`), because `MoveTo(pos)` is `protected` (`AI.h:974`), and `rvAITether` and `SetTether` / `SetLeader` are already public (`AI.h:830, 912`).

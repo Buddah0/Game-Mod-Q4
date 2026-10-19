@@ -1119,6 +1119,9 @@ idPlayer::idPlayer() {
 	overlayHud				= NULL;
 	overlayHudTime			= 0;
 
+	ptpHudOrder				= -1;
+	ptpHudScanTime			= 0;
+
 	lastDmgTime				= 0;
 	deathClearContentsTime	= 0;
 	nextHealthPulse			= 0;
@@ -3385,6 +3388,25 @@ void idPlayer::UpdateHudAmmo( idUserInterface *_hud ) {
 }
 
 /*
+=====================
+PTP_SquadOrder
+
+PTP: the squad's active order for the HUD order panel, read the way
+IssueSquadOrder reads it: "ptp_order" on the first live squad member
+(-1 = following, or no squad). Members hidden by a ptp_squad re-deploy are
+skipped; they are removed next frame.
+=====================
+*/
+static int PTP_SquadOrder( void ) {
+	for ( idEntity *ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+		if ( ent->spawnArgs.GetBool( "ptp_squad" ) && ent->IsType( idAI::GetClassType() ) && ent->health > 0 && !ent->IsHidden() ) {
+			return ent->spawnArgs.GetInt( "ptp_order", "-1" );
+		}
+	}
+	return -1;
+}
+
+/*
 ===============
 idPlayer::UpdateHudStats
 ===============
@@ -3438,6 +3460,14 @@ void idPlayer::UpdateHudStats( idUserInterface *_hud ) {
 		UpdateHudAmmo( _hud );
 	}
 	
+	// PTP: squad order panel (gui::ptp_order in hud.gui). The order lives on the squad ("ptp_order"),
+	// so rescan it a few times a second (IssueSquadOrder forces a rescan) instead of every frame
+	if ( gameLocal.time >= ptpHudScanTime ) {
+		ptpHudScanTime = gameLocal.time + 250;
+		ptpHudOrder = PTP_SquadOrder();
+	}
+	_hud->SetStateInt( "ptp_order", ptpHudOrder );
+
 	_hud->StateChanged( gameLocal.time );
 }
 
@@ -13679,6 +13709,9 @@ void idPlayer::IssueSquadOrder( int order ) {
 	if ( order < 0 || order >= PTP_NUM_ORDERS ) {
 		return;
 	}
+
+	// refresh the HUD order panel next frame instead of at its next timed rescan
+	ptpHudScanTime = 0;
 
 	for ( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
 		if ( ent->spawnArgs.GetBool( "ptp_squad" ) && ent->IsType( idAI::GetClassType() ) && ent->health > 0 ) {

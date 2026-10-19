@@ -934,6 +934,9 @@ private:
 
 	idUserInterface *		overlayHud;			// a temporary hud overlay
 	int						overlayHudTime;
+
+	int						ptpHudOrder;		// PTP: squad order shown on the HUD order panel (-1 = following)
+	int						ptpHudScanTime;		// PTP: when UpdateHudStats next rescans the squad for it; neither is saved
 	
 	// full screen guis track mouse movements directly
 	int						oldMouseX;

@@ -30,6 +30,7 @@ A Quake 4 single-player mod (IT 266 midterm). You play the President: unarmed, a
 | **Tab** | Help screen | Shows or hides the in-game help. |
 
 - **Every order is a toggle.** Press the same key again and the squad goes back to following you. Pressing a different order switches straight to it.
+- **The order panel** in the top-left corner of the HUD lists the four orders and highlights the active one. Nothing is highlighted while the squad is following you.
 - **The crosshair is your aim point** for Attack.
 - Movement and every other key are the Quake 4 defaults.
 

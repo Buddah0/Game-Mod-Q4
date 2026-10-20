@@ -241,3 +241,46 @@ HUD text can be bound to C++ state: stock `hud.gui` uses `text "gui::player_heal
 ## 8. Known unknowns (not verifiable from the repo)
 - Whether the mod-local `mainmenu.gui` `PlayIntro` patch skips the logos cleanly (needs one launch).
 - Exact in-game behavior of tether-vs-follow with `rvAIMedic` (needs a play test).
+
+## 9. Contemporary weapons theme (midterm deliverable, 2026-10-19, branch `midterm_checkpoint`)
+**Status:** built and deployed (pk4 hash verified, defs copied); **the user confirmed it works in game (2026-10-19).**
+
+**Decisions (user):**
+- **Demo:** through the squad and pickups. No dev arming switch; the President stays unarmed.
+- **C++:** revert both "Rocket mod" changes.
+- **Roster:** all 11 slots themed: Railgun → Barrett M82A1, Lightning Gun → TASER X26P, Dark Matter Gun → AT4, Napalm → M2 Flamethrower.
+- **Thunder:** switched from plasma bolts to bullets.
+
+**Player weapons (`def/weapons/*.def`, 11 files):**
+- Each is a byte-copy of the newest stock file (the blaster from pak015, the rest from pak022) with only these keys edited: `inv_name`, `weaponname` (where stock has it), `fireRate`, `clipSize`, plus the per-weapon keys below.
+- **Names:** plain-text `inv_name`, with no `.lang` file. Stock `weapon_napalmgun` already did this.
+- **Per-weapon keys:**
+  - M1911: `chargeTime 999` (no charged plasma shot), `damage_blaster` 8→12.
+  - Shotgun: `hitscans` 9.
+  - Barrett: `damage_railgun` 150.
+  - TASER: `range` 300 and `def_damage damage_ptp_taser` (a new 3-damage def inheriting `damage_lightninggun`, so the Makron is unaffected).
+  - AT4: `def_projectile projectile_rocket`.
+- **Shared with enemies, so left stock:** `projectile_nail` and `damage_nail*` (Gunner, Harvester), `damage_lightninggun` (Makron), `projectile_rocket`, `hitscan_bullet` (vehicles).
+- **Full table:** `README.md`, "Weapons".
+- **The AR-15's semi-auto mode is stock:** zoomed fire sets `fireHeld` (`WeaponMachinegun.cpp:229-232`).
+
+**Squad (`def/ptp_squad.def`, override keys only):**
+- The guns show through `npc_description` in the hover text (`Player.cpp:7366`).
+- **Overwatch:** Barrett M82A1, damage 60→90. The railgun trail is gone; it uses the stock bullet tracer with `tracerchance 1`.
+- **Ram and Wrench:** Mossberg 590A1, `ammo` 8, pellet count 9.
+- **Thunder:** M249 SAW. `def_attack_base` / `killswitch` → stock `hitscan_marine_bullet` (hitscan), with the machinegun sound and flash. `ammo` 200.
+- **Doc:** AR-15 (M4A1). `ammo` 30, `fireRate` .075, bursts 3-10.
+
+**C++:**
+- `WeaponBlaster.cpp` and `WeaponRocketLauncher.cpp` are back to stock `Attack ( false, 1, spread, 0, 1.0f )`. The "Rocket mod" class example from `1e645ac` is undone.
+- Built with `BuildProjectReferences=false`; `idLib.lib` still dated 2026-09-26 22:41.
+- **pk4 backup:** `C:\Users\loren\source\repos\pk4_backups\game000_2026-10-19_before-weapons.pk4`.
+
+**To check in game:**
+- Hover text shows each gun.
+- Thunder fires bullets (no blue bolts).
+- Ram and Wrench reload after 8 shots.
+- Overwatch shows a tracer.
+- Pickups (`spawn weapon_shotgun` etc.) show the new names.
+- No def warnings in the console.
+- `give all` still can't make the President fire.

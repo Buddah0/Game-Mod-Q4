@@ -19,12 +19,25 @@
 
 /*
 ===============================================================================
-	Marksman attack: slow, accurate, high-damage shot with a railgun trail
+	Contemporary weapons (real-world reference in README.md, "Weapons"):
+		Overwatch	Barrett M82A1	.50 BMG, 10-round magazine, semi-auto
+		Ram, Wrench	Mossberg 590A1	12 ga pump, 8-shell tube, 9 pellets 00 buck
+		Thunder		M249 SAW		5.56 mm, 200-round belt, ~750 rpm
+		Doc			AR-15 (M4A1)	5.56 mm, 30-round magazine, ~800 rpm
+	"ammo" is the AI's magazine (shots before it reloads), "fireRate" is
+	seconds between shots, "attack_base_count" is pellets per shot.
+===============================================================================
+*/
+
+/*
+===============================================================================
+	Marksman attack: Barrett M82A1 (.50 BMG), slow, accurate, heavy hit with
+	the stock bullet tracer on every shot
 ===============================================================================
 */
 entityDef damage_ptp_marksman {
 	"inherit"					"damage_bullet_base"
-	"damage"					"60"
+	"damage"					"90"
 	"deathPush"					"150"
 	"deathPushMin"				"4000 750"
 	"deathPushMax"				"6750 1250"
@@ -33,8 +46,7 @@ entityDef damage_ptp_marksman {
 entityDef hitscan_ptp_marksman {
 	"inherit"					"hitscan_bullet_base"
 	"def_damage"				"damage_ptp_marksman"
-	"fx_path"					"effects/weapons/railgun/trail.fx"
-	"tracerchance"				"0"
+	"tracerchance"				"1"
 }
 
 /*
@@ -51,7 +63,7 @@ entityDef ptp_marksman {
 	"follows"						"1"
 	"ptp_squad"						"1"
 	"npc_name"						"Overwatch"
-	"npc_description"				"Marksman - long range"
+	"npc_description"				"Marksman - Barrett M82A1"
 	"def_head"						"char_marinehead_gen_asian"
 	"skin"							"skins/models/characters/marine/viper"
 
@@ -90,13 +102,18 @@ entityDef ptp_breacher {
 	"follows"						"1"
 	"ptp_squad"						"1"
 	"npc_name"						"Ram"
-	"npc_description"				"Breacher - close quarters"
+	"npc_description"				"Breacher - Mossberg 590A1"
 	"def_head"						"char_marinehead_helmet"
 	"skin"							"skins/models/characters/marine/kodiak"
 
 	"health"						"200"
 	"healthRegenEnabled"			"1"
 	"healthRegen"					"2"
+
+	// Mossberg 590A1: 8-shell tube, 9 pellets of 00 buckshot
+	"ammo"							"8"
+	"attack_base_count"				"9"
+	"attack_killswitch_count"		"9"
 }
 
 /*
@@ -113,15 +130,24 @@ entityDef ptp_gunner {
 	"follows"						"1"
 	"ptp_squad"						"1"
 	"npc_name"						"Thunder"
-	"npc_description"				"Gunner - suppressing fire"
+	"npc_description"				"Gunner - M249 SAW"
 	"def_head"						"char_marinehead_gen_african_american_2"
 	"skin"							"skins/models/characters/marine/badger"
 
 	"health"						"150"
-	"ammo"							"120"
+	"ammo"							"200"
 	"minShots"						"10"
 	"maxShots"						"30"
 	"attack_base_accuracy"			"2"
+
+	// M249 SAW: 5.56 mm bullets instead of plasma bolts, same gun model.
+	// Stock marine round, machinegun sound and muzzle flash; 200-round belt.
+	"def_attack_base"				"hitscan_marine_bullet"
+	"attack_base_hitscan"			"1"
+	"def_attack_killswitch"			"hitscan_marine_bullet"
+	"attack_killswitch_hitscan"		"1"
+	"snd_base_flash"				"npc_machinegun_fire"
+	"fx_base_flash"					"effects/weapons/machinegun/muzzleflash_world.fx"
 }
 
 /*
@@ -138,9 +164,15 @@ entityDef ptp_medic {
 	"follows"						"1"
 	"ptp_squad"						"1"
 	"npc_name"						"Doc"
-	"npc_description"				"Medic - restores health"
+	"npc_description"				"Medic - AR-15 (M4A1)"
 
 	"health"						"125"
+
+	// AR-15 (M4A1): 30-round magazine, ~800 rpm, short bursts
+	"ammo"							"30"
+	"fireRate"						".075"
+	"minShots"						"3"
+	"maxShots"						"10"
 }
 
 /*
@@ -161,7 +193,12 @@ entityDef ptp_engineer {
 	"follows"						"1"
 	"ptp_squad"						"1"
 	"npc_name"						"Wrench"
-	"npc_description"				"Engineer - repairs armor"
+	"npc_description"				"Engineer - Mossberg 590A1"
 
 	"health"						"125"
+
+	// Mossberg 590A1: 8-shell tube, 9 pellets of 00 buckshot
+	"ammo"							"8"
+	"attack_base_count"				"9"
+	"attack_killswitch_count"		"9"
 }

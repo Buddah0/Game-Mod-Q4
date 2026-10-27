@@ -1,0 +1,67 @@
+/*
+===============================================================================
+
+	Protect the President - mission entities
+
+	Spawned at runtime by the mission script (maps/game/airdefense1.script).
+	Each one reuses a stock class and a stock model; only the keys below are
+	custom.
+
+===============================================================================
+*/
+
+/*
+===============================================================================
+	Intel document (objective 1). "inv_carry" makes the pickup always succeed
+	(idPlayer::GiveInventoryItem): a plain item_generic gives the player
+	nothing, so it is never picked up. A picked-up document stays hidden, which
+	is how the script counts it. The script renames "inv_name" to
+	"Intel Document n of 3" for the pickup bar.
+	Item physics needs a box clip model ("mins" / "maxs", like item_health);
+	the binder mesh itself is about 29 x 15 x 3.4 units, origin at its base.
+===============================================================================
+*/
+entityDef item_ptp_document {
+	"inherit"				"item_generic"
+	"editor_usage"			"Protect the President: intel document (objective 1)."
+
+	"model"					"models/mapobjects/marine/equipment/misc/reuse/binder1_uv.lwo"
+	"mins"					"-8 -8 0"
+	"maxs"					"8 8 4"
+	"inv_name"				"Intel Document"
+	"inv_carry"				"1"
+}
+
+/*
+===============================================================================
+	Strogg data bank to blow up (objective 2) and the charge planted on it.
+	Stock map objects with their own collision models.
+===============================================================================
+*/
+entityDef ptp_computer {
+	"inherit"				"func_static"
+	"editor_usage"			"Protect the President: Strogg data bank to destroy (objective 2)."
+
+	"model"					"models/mapobjects/strogg/console/generic/data_bank1.lwo"
+}
+
+entityDef ptp_charge {
+	"inherit"				"func_static"
+	"editor_usage"			"Protect the President: demolition charge (objective 2)."
+
+	"model"					"models/mapobjects/marine/equipment/minepack.lwo"
+	"solid"					"0"
+	"noclipmodel"			"1"
+}
+
+/*
+===============================================================================
+	Mission checkpoint: triggering it deploys a fresh five-member squad around
+	the President, like ptp_squad (rvTarget_PTPCheckpoint, game/Target.cpp).
+===============================================================================
+*/
+entityDef target_ptp_checkpoint {
+	"editor_usage"			"Protect the President: trigger to deploy a fresh squad around the President."
+
+	"spawnclass"			"rvTarget_PTPCheckpoint"
+}

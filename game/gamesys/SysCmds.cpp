@@ -1160,6 +1160,40 @@ void Cmd_Spawn_f( const idCmdArgs &args ) {
 
 /*
 ===================
+PTP_CanReachPlayer
+
+True if the squad can walk from 'spot' to the player in their AAS ("use_aas"
+"aas32" on char_marine_base): both ends are looked up and routed the way
+idAI::TravelDistance does it. Without that AAS, or with the player off it,
+any spot passes.
+===================
+*/
+static bool PTP_CanReachPlayer( idPlayer *player, const idVec3 &spot ) {
+	idAAS *aas = gameLocal.GetAAS( "aas32" );
+	if ( !aas ) {
+		return true;
+	}
+
+	// search bounds as in idAI::PointReachableAreaNum
+	idVec3		size = aas->GetSettings()->boundingBoxes[0][1] * 2.0f;
+	idBounds	bounds;
+	bounds[0] = -size;
+	size.z = 32.0f;
+	bounds[1] = size;
+
+	int playerArea = aas->PointReachableAreaNum( player->GetPhysics()->GetOrigin(), bounds, AREA_REACHABLE_WALK );
+	if ( !playerArea ) {
+		return true;
+	}
+
+	int				area = aas->PointReachableAreaNum( spot, bounds, AREA_REACHABLE_WALK );
+	int				travelTime;
+	idReachability	*reach;
+	return area && aas->RouteToGoalArea( area, spot, playerArea, TFL_WALK|TFL_AIR, travelTime, &reach );
+}
+
+/*
+===================
 PTP_FindSquadSpot
 
 Finds a spawn spot for one squad member up to 'radius' away from the player
@@ -1167,11 +1201,12 @@ along 'yaw'. A marine-sized box ("size" "32 32 72" on char_marine_base) is
 swept out from the player so walls and props at any height stop it, then
 swept down onto the floor (drops are rejected), and the final spot must not
 overlap anything solid or any body, including squad members placed before it.
-Same box-sweep pattern as AAS_debug.cpp.
+Same box-sweep pattern as AAS_debug.cpp. With 'needRoute' the squad must also
+be able to walk from the spot to the player (PTP_CanReachPlayer).
 ===================
 */
-static bool PTP_FindSquadSpot( idPlayer *player, float yaw, float radius, idVec3 &spot ) {
-	const float		minDist = 40.0f;	// player + marine half-widths + margin
+static bool PTP_FindSquadSpot( idPlayer *player, float yaw, float radius, bool needRoute, idVec3 &spot ) {
+	const float		minDist = 64.0f;	// a marine's width clear of the player, so nobody is wedged in behind him
 	const float		stepUp = 16.0f;		// lift over small lips and slopes
 	const float		maxDrop = 64.0f;	// deeper than this is a ledge, not floor
 	const idBounds	marineBounds( idVec3( -16.0f, -16.0f, 0.0f ), idVec3( 16.0f, 16.0f, 72.0f ) );
@@ -1202,37 +1237,39 @@ static bool PTP_FindSquadSpot( idPlayer *player, float yaw, float radius, idVec3
 	if ( gameLocal.Contents( player, spot, &mdl, mat3_identity, MASK_MONSTERSOLID, player ) ) {
 		return false;
 	}
-	return true;
+	return !needRoute || PTP_CanReachPlayer( player, spot );
 }
 
 /*
 ===================
-Cmd_PTPSquad_f
+PTP_DeploySquad
 
 Spawns the President's protection squad (def/ptp_squad.def) in a semicircle
-behind the player. A member whose spot doesn't fit tries fallback spots: a
-second row straight behind, where the player just came from, then the sides
-and finally in front. Any squad already in the level is removed first, so
-running the command again re-deploys the squad instead of stacking duplicates.
+behind the player. A member whose spot doesn't fit tries a ring of fallback
+spots: a second row straight behind, where the player just came from, then
+around the sides to the front (with a wall at his back, as at the start of
+airdefense1, they end up in front of him). Spots the squad can walk to the
+player from come first; any open spot is used only if there is none. Any
+squad already in the level is removed first, so this
+re-deploys a fresh squad (full health, following) instead of stacking
+duplicates; mission checkpoints (rvTarget_PTPCheckpoint) use it the same way
+as the ptp_squad command. Returns how many were spawned.
 ===================
 */
-void Cmd_PTPSquad_f( const idCmdArgs &args ) {
-#ifndef _MPBETA
+int PTP_DeploySquad( idPlayer *player ) {
 	static const char *	squadDefs[] = { "ptp_marksman", "ptp_breacher", "ptp_gunner", "ptp_medic", "ptp_engineer" };
 	static const float	squadYaw[]  = { 0.0f, -40.0f, 40.0f, -80.0f, 80.0f };
 	// relative to straight behind the player
-	static const float	fallbackYaw[] = { -15.0f, 15.0f, 0.0f, -130.0f, 130.0f, 180.0f };
+	static const float	fallbackYaw[] = { -15.0f, 15.0f, 0.0f, -45.0f, 45.0f, -100.0f, 100.0f, -130.0f, 130.0f, -160.0f, 160.0f, 180.0f };
 	const int			numSquad = sizeof( squadDefs ) / sizeof( squadDefs[ 0 ] );
 	const int			numFallback = sizeof( fallbackYaw ) / sizeof( fallbackYaw[ 0 ] );
 	const float			radius = 100.0f;
 	const float			fallbackRadius = 160.0f;
 	idEntity			*ent;
-	idPlayer			*player;
-	int					i, spawned, fallback;
+	int					i, f, pass, spawned;
 
-	player = gameLocal.GetLocalPlayer();
 	if ( !player || player->health <= 0 ) {
-		return;
+		return 0;
 	}
 
 	// remove the previous squad and its order tethers (a new squad starts out following);
@@ -1248,16 +1285,23 @@ void Cmd_PTPSquad_f( const idCmdArgs &args ) {
 	float yaw = player->viewAngles.yaw;
 
 	spawned = 0;
-	fallback = 0;
 	for( i = 0; i < numSquad; i++ ) {
-		// slot behind the player, pulled in if something is in the way
+		// slot behind the player (pulled in if something is in the way), then the fallback
+		// ring; spots taken by earlier members fail the body check. Pass 0 only takes spots
+		// the squad can walk to the player from, pass 1 any open spot
 		idVec3 spot;
-		bool found = PTP_FindSquadSpot( player, yaw + 180.0f + squadYaw[ i ], radius, spot );
-		while ( !found && fallback < numFallback ) {
-			found = PTP_FindSquadSpot( player, yaw + 180.0f + fallbackYaw[ fallback++ ], fallbackRadius, spot );
+		bool found = false;
+		for ( pass = 0; pass < 2 && !found; pass++ ) {
+			found = PTP_FindSquadSpot( player, yaw + 180.0f + squadYaw[ i ], radius, pass == 0, spot );
+			for ( f = 0; !found && f < numFallback; f++ ) {
+				found = PTP_FindSquadSpot( player, yaw + 180.0f + fallbackYaw[ f ], fallbackRadius, pass == 0, spot );
+			}
+			if ( found && pass == 1 ) {
+				gameLocal.Printf( "ptp_squad: no walkable spot for '%s', placed anyway\n", squadDefs[ i ] );
+			}
 		}
 		if ( !found ) {
-			gameLocal.Warning( "ptp_squad: no room to spawn '%s'", squadDefs[ i ] );
+			gameLocal.Printf( "ptp_squad: no room to spawn '%s'\n", squadDefs[ i ] );
 			continue;
 		}
 
@@ -1273,6 +1317,19 @@ void Cmd_PTPSquad_f( const idCmdArgs &args ) {
 	}
 
 	gameLocal.Printf( "ptp_squad: spawned %d/%d\n", spawned, numSquad );
+	return spawned;
+}
+
+/*
+===================
+Cmd_PTPSquad_f
+
+Deploys a fresh protection squad around the player (PTP_DeploySquad).
+===================
+*/
+void Cmd_PTPSquad_f( const idCmdArgs &args ) {
+#ifndef _MPBETA
+	PTP_DeploySquad( gameLocal.GetLocalPlayer() );
 #endif // !_MPBETA
 }
 

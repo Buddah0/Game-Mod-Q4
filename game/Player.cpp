@@ -3407,6 +3407,27 @@ static int PTP_SquadOrder( void ) {
 }
 
 /*
+=====================
+PTP_UpdateMissionHud
+
+PTP: mission panel (gui::hud_ptp_* in hud.gui). The mission script
+(maps/game/airdefense1.script) keeps its HUD text as "hud_*" keys on its
+"ptp_mission" entity, so the text survives save / load with the entity; copy
+them to the HUD. Without the mission entity (any other map) the panel hides.
+=====================
+*/
+static void PTP_UpdateMissionHud( idUserInterface *hud ) {
+	idEntity *mission = gameLocal.FindEntity( "ptp_mission" );
+	if ( !mission ) {
+		hud->SetStateString( "hud_ptp_active", "0" );
+		return;
+	}
+	for ( const idKeyValue *kv = mission->spawnArgs.MatchPrefix( "hud_" ); kv; kv = mission->spawnArgs.MatchPrefix( "hud_", kv ) ) {
+		hud->SetStateString( kv->GetKey().c_str(), kv->GetValue().c_str() );
+	}
+}
+
+/*
 ===============
 idPlayer::UpdateHudStats
 ===============
@@ -3467,6 +3488,8 @@ void idPlayer::UpdateHudStats( idUserInterface *_hud ) {
 		ptpHudOrder = PTP_SquadOrder();
 	}
 	_hud->SetStateInt( "ptp_order", ptpHudOrder );
+
+	PTP_UpdateMissionHud( _hud );
 
 	_hud->StateChanged( gameLocal.time );
 }

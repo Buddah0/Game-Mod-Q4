@@ -8,4 +8,7 @@ void KillEntities( const idCmdArgs &args, const idTypeInfo &superClass );
 
 void GiveStuffToPlayer( idPlayer* player, const char* name, const char* value );
 
+// PTP: deploys a fresh protection squad around the player (ptp_squad, mission checkpoints)
+int PTP_DeploySquad( idPlayer *player );
+
 #endif /* !__SYS_CMDS_H__ */

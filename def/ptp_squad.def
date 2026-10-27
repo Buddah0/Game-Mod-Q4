@@ -11,6 +11,8 @@
 		"leader"	"player1"	follow the President from spawn
 		"follows"	"1"			click (talk) toggles follow / stop following
 		"ptp_squad"	"1"			tag used by the ptp_squad console command
+		"followRange" "60 128"	start following at 128 units, not the stock 192
+							(ai_tactical), so they don't trail far behind
 
 	Spawn the whole squad with the console command:  ptp_squad
 
@@ -62,6 +64,7 @@ entityDef ptp_marksman {
 	"leader"						"player1"
 	"follows"						"1"
 	"ptp_squad"						"1"
+	"followRange"					"60 128"
 	"npc_name"						"Overwatch"
 	"npc_description"				"Marksman - Barrett M82A1"
 	"def_head"						"char_marinehead_gen_asian"
@@ -101,6 +104,7 @@ entityDef ptp_breacher {
 	"leader"						"player1"
 	"follows"						"1"
 	"ptp_squad"						"1"
+	"followRange"					"60 128"
 	"npc_name"						"Ram"
 	"npc_description"				"Breacher - Mossberg 590A1"
 	"def_head"						"char_marinehead_helmet"
@@ -129,6 +133,7 @@ entityDef ptp_gunner {
 	"leader"						"player1"
 	"follows"						"1"
 	"ptp_squad"						"1"
+	"followRange"					"60 128"
 	"npc_name"						"Thunder"
 	"npc_description"				"Gunner - M249 SAW"
 	"def_head"						"char_marinehead_gen_african_american_2"
@@ -163,6 +168,7 @@ entityDef ptp_medic {
 	"leader"						"player1"
 	"follows"						"1"
 	"ptp_squad"						"1"
+	"followRange"					"60 128"
 	"npc_name"						"Doc"
 	"npc_description"				"Medic - AR-15 (M4A1)"
 
@@ -192,6 +198,7 @@ entityDef ptp_engineer {
 	"leader"						"player1"
 	"follows"						"1"
 	"ptp_squad"						"1"
+	"followRange"					"60 128"
 	"npc_name"						"Wrench"
 	"npc_description"				"Engineer - Mossberg 590A1"
 

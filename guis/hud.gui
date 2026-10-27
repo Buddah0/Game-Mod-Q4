@@ -2570,7 +2570,44 @@ windowDef Desktop
 		}
 	}
 
-//-----------------------		
+//-----------------------
+// PTP: mission panel, under the order panel. The gui::hud_ptp_* strings are the
+// "hud_*" keys of the mission script's "ptp_mission" entity, copied over by
+// idPlayer::UpdateHudStats: the current objective, and a status line for prompts
+// and countdowns
+//-----------------------
+
+	windowDef ptp_mission
+	{
+		rect	8,34,294,36
+		visible	("gui::mp" == 0)
+
+		windowDef ptp_mission_panel
+		{
+			rect	0,0,294,36
+			visible	("gui::hud_ptp_active" == 1)
+			backcolor	0,0,0,0.5
+
+			windowDef ptp_mission_objective
+			{
+				rect	6,2,284,16
+				forecolor	0.866,0.921,0.764,1
+				text	"gui::hud_ptp_objective"
+				textscale	0.22
+				font	"fonts/marine"
+			}
+			windowDef ptp_mission_status
+			{
+				rect	6,18,284,16
+				forecolor	1,0.8,0.2,1
+				text	"gui::hud_ptp_status"
+				textscale	0.22
+				font	"fonts/marine"
+			}
+		}
+	}
+
+//-----------------------
 // over top black/failed text
 //-----------------------	
 	

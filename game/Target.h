@@ -701,4 +701,24 @@ public:
 private:
 	void				Event_Activate( idEntity *activator );
 };
+
+/*
+===============================================================================
+
+rvTarget_PTPCheckpoint
+
+PTP: mission checkpoint (target_ptp_checkpoint). Triggering it deploys a fresh
+five-member squad around the President, like the ptp_squad command; the
+mission script triggers it after each objective, and once at the start.
+
+===============================================================================
+*/
+
+class rvTarget_PTPCheckpoint : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_PTPCheckpoint );
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
 #endif /* !__GAME_TARGET_H__ */

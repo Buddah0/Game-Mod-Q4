@@ -2319,3 +2319,24 @@ void idTarget_FadeSoundClass::Event_RestoreVolume() {
 	soundSystem->FadeSoundClasses( SOUNDWORLD_GAME, 0, fadeDB, fadeTime );
 }
 
+/*
+===============================================================================
+
+rvTarget_PTPCheckpoint
+
+===============================================================================
+*/
+
+CLASS_DECLARATION( idTarget, rvTarget_PTPCheckpoint )
+	EVENT( EV_Activate,		rvTarget_PTPCheckpoint::Event_Activate )
+END_CLASS
+
+/*
+================
+rvTarget_PTPCheckpoint::Event_Activate
+================
+*/
+void rvTarget_PTPCheckpoint::Event_Activate( idEntity *activator ) {
+	PTP_DeploySquad( gameLocal.GetLocalPlayer() );
+}
+

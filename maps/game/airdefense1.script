@@ -1,0 +1,649 @@
+/*
+===============================================================================
+
+	Protect the President - mission script for Air Defense Bunker (game/airdefense1)
+
+	idWorldspawn::Spawn compiles maps/<mapname>.script and runs its global main()
+	next to the stock level script (scripts/maps/airdefense1.script, started by
+	the worldspawn "call" key), so the mission runs on top of the stock level
+	without editing the .map. Everything here spawns stock entities at runtime.
+
+	This file is compiled on its own, after scripts/main.script: the stock
+	functions (isValidEntity, ...) are available, but the stock #defines
+	(true, false, MASK_*, GUI_*, ...) are not, so use plain numbers.
+
+	Passing a NULL entity to an event like sys.trigger() terminates the
+	calling thread (idInterpreter::CallSysEvent), and retail Quake 4 only
+	shows that warning with "developer 1". So entities go through fire() and
+	spawnEntity(), which check and print what is missing.
+
+	Objectives, in order:
+		1. Collect the intel		(3 documents)
+		2. Destroy the computer		(plant a charge, get clear)
+		3. Reach extraction			(hold the zone for 25 seconds)
+	The squad joins the President at the bunker doors (the level's first
+	checkpoint save), not at the dropship: the narrow ramp on the way in jams
+	the AI. Each completed objective, and entering the extraction zone, is a
+	checkpoint: a fresh squad of five deploys around the President
+	(target_ptp_checkpoint, same as ptp_squad) and the game is saved (stock
+	func_savegame).
+
+	Test aid: "set ptp_skip 1" skips objective 1 (also when typed during it),
+	"set ptp_skip 2" goes straight to extraction; "set ptp_skip 0" undoes it.
+
+	The HUD mission panel (guis/hud.gui) shows the "hud_*" keys of the
+	"ptp_mission" entity; idPlayer::UpdateHudStats copies them to the HUD.
+
+===============================================================================
+*/
+
+namespace ptp_mission {
+
+// Placement: getviewpos output from a walk through the level. These are eye
+// positions; floorBelow() finds the floor under each one.
+vector	DOC_1			= '8438.96 -5521.64 68.25';
+vector	DOC_2			= '10581.55 -3080.03 68.25';
+vector	DOC_3			= '10180.21 -1655.21 52.25';
+vector	COMPUTER		= '8916.25 -3081.93 100.25';
+float	COMPUTER_YAW	= 179.9;
+vector	EXTRACT			= '8159.01 -2519.8 92.25';		// where Corporal Cortez stood
+// holdout enemy entry: just inside the Cortez room, past the scripted disc door
+// (doorDisc_6 at x 8640) that enemies spawned behind it got stuck on
+vector	SPAWN_1			= '8535.21 -2653.83 84.25';
+vector	SPAWN_2			= '8332.99 -3287.75 84.25';	// holdout enemy entry: by the exit
+float	HOLD_TIME		= 25;						// seconds to hold the extraction zone
+
+entity	mission;			// "ptp_mission": the HUD text, as "hud_*" keys
+entity	checkpointTarget;	// target_ptp_checkpoint: deploys a fresh squad
+entity	saveTarget;			// stock func_savegame: checkpoint save
+float	squadJoined;		// the squad has joined the President (squadJoinsAtBunker)
+
+/*
+=====================
+fire
+
+Triggers an entity, or prints what is missing instead of letting a NULL
+entity terminate the mission thread.
+=====================
+*/
+void fire( entity ent, string what ) {
+	if ( isValidEntity( ent ) ) {
+		sys.trigger( ent );
+	} else {
+		sys.print( "ptp_mission: " + what + " is missing\n" );
+	}
+}
+
+/*
+=====================
+spawnEntity
+
+sys.spawn() with the spawnArgs set before it; prints the classname if it
+could not be spawned.
+=====================
+*/
+entity spawnEntity( string classname ) {
+	entity ent;
+
+	ent = sys.spawn( classname );
+	if ( !isValidEntity( ent ) ) {
+		sys.print( "ptp_mission: could not spawn '" + classname + "'\n" );
+	}
+	return ent;
+}
+
+/*
+=====================
+removeEntity
+
+Removes an entity by name. Only for entities that no stock script still
+triggers (that would get a NULL entity and terminate the stock thread); for
+those, use replaceEntity.
+=====================
+*/
+void removeEntity( string name ) {
+	entity ent;
+
+	ent = sys.getEntity( name );
+	if ( isValidEntity( ent ) ) {
+		ent.remove();
+	}
+}
+
+/*
+=====================
+replaceEntity
+
+Takes a stock entity out of play without breaking the stock scripts that
+trigger it: it is renamed, and a plain target_null takes over its name (and
+so its $name script reference). Their sys.trigger() then hits the
+target_null, which does nothing. Removing it would leave $name NULL and
+terminate the stock thread at that trigger.
+=====================
+*/
+void replaceEntity( string name ) {
+	entity ent;
+
+	ent = sys.getEntity( name );
+	if ( isValidEntity( ent ) ) {
+		ent.setName( "ptp_replaced_" + name );
+		sys.setSpawnArg( "name", name );
+		spawnEntity( "target_null" );
+	}
+}
+
+/*
+=====================
+floorBelow
+
+The floor under a getviewpos eye position (1 = CONTENTS_SOLID).
+=====================
+*/
+vector floorBelow( vector eye ) {
+	sys.tracePoint( eye, eye - '0 0 160', 1, $player1 );
+	return sys.getTraceEndPos();
+}
+
+/*
+=====================
+hud
+
+Sets the two lines of the HUD mission panel.
+=====================
+*/
+void hud( string objective, string status ) {
+	mission.setKey( "hud_ptp_objective", objective );
+	mission.setKey( "hud_ptp_status", status );
+}
+
+/*
+=====================
+cameraActive
+=====================
+*/
+float cameraActive( string name ) {
+	entity cam;
+
+	cam = sys.getEntity( name );
+	if ( isValidEntity( cam ) ) {
+		return cam.isActive();
+	}
+	return 0;
+}
+
+/*
+=====================
+waitForIntro
+
+Waits until the stock intro (checkStartCinematics: cin_camera_intro_cin_1, then
+cin_opening) has been over for 2 seconds, with the same isActive() test as
+playCameraWait (scripts/util.script). The 2 seconds cover the frame between the
+two cameras. A skipped intro falls straight through.
+=====================
+*/
+void waitForIntro() {
+	float quietSince;
+
+	sys.wait( 1 );	// let the stock thread start the first camera
+	quietSince = sys.getTime();
+	while ( sys.getTime() - quietSince < 2 ) {
+		if ( cameraActive( "cin_camera_intro_cin_1" ) || cameraActive( "cin_opening" ) ) {
+			quietSince = sys.getTime();
+		}
+		sys.waitFrame();
+	}
+}
+
+/*
+=====================
+giveObjective
+
+Adds an objective to the wristcomm (stock item_objective). Its matching
+item_objectivecomplete ("ptp_done_<id>") is spawned first, because triggering
+the objective enables the complete entity with the same title.
+=====================
+*/
+void giveObjective( string id, string title, string text ) {
+	entity obj;
+
+	sys.setSpawnArg( "name", "ptp_done_" + id );
+	sys.setSpawnArg( "origin", $player1.getOrigin() );
+	sys.setSpawnArg( "objectivetitle", title );
+	sys.setSpawnArg( "objectivetext", title );
+	spawnEntity( "item_objectivecomplete" );
+
+	sys.setSpawnArg( "name", "ptp_obj_" + id );
+	sys.setSpawnArg( "origin", $player1.getOrigin() );
+	sys.setSpawnArg( "objectivetitle", title );
+	sys.setSpawnArg( "objectivetext", text );
+	obj = spawnEntity( "item_objective" );
+	fire( obj, "objective '" + id + "'" );
+}
+
+/*
+=====================
+checkpoint
+
+Completes objective <id> in the wristcomm, deploys a fresh squad around the
+President and saves the game.
+=====================
+*/
+void checkpoint( string id ) {
+	fire( sys.getEntity( "ptp_done_" + id ), "objective complete '" + id + "'" );
+	fire( checkpointTarget, "the checkpoint (target_ptp_checkpoint)" );
+	fire( saveTarget, "the checkpoint save (func_savegame)" );
+}
+
+/*
+=====================
+waitForObjectivePopup
+
+The stock "objective complete" popup stays up to 5 seconds and then hides the
+objective popup (idObjectiveComplete::Event_HideObjective). Giving the next
+objective during that time shows its title under "OBJECTIVE COMPLETE", and the
+hide then takes the new popup away too, so the next one waits it out.
+=====================
+*/
+void waitForObjectivePopup() {
+	sys.wait( 5.5 );
+}
+
+/*
+=====================
+setupLevel
+
+Takes the stock objectives out of play so the wristcomm only lists the
+mission, and removes the stock exit to airdefense2. That one is removed, not
+replaced: only the exitlevel panel's relay reaches it, through a target
+pointer that a removed entity clears.
+
+The Cortez scene goes too, since the extraction zone is where he stands: its
+relay (trigger_relay_5, reached only through trigger_once_46's target pointer)
+calls cortezIntro, and the Strogg deaths are called from his intro animation,
+so with the relay and the actors removed none of it runs.
+
+The intro's distant Harvester can't be targeted, or the squad (Overwatch has a
+2000-unit range) stops following to shoot at it.
+=====================
+*/
+void setupLevel() {
+	entity harvester;
+
+	replaceEntity( "objectiveIntro" );
+	replaceEntity( "completeObjectiveIntro" );
+	replaceEntity( "objectiveMedic" );
+	replaceEntity( "completeObjectiveMedic" );
+	replaceEntity( "objectiveReturnMedic" );
+	replaceEntity( "objectiveCompleteReturnMedic" );
+
+	removeEntity( "target_endlevel_2" );
+
+	removeEntity( "trigger_relay_5" );
+	removeEntity( "npc_cortez" );
+	removeEntity( "strogg_cortez_1" );
+	removeEntity( "strogg_cortez_2" );
+	removeEntity( "cortez_berserker" );
+
+	harvester = sys.getEntity( "monster_harvester_1" );
+	if ( isValidEntity( harvester ) ) {
+		harvester.disableTarget();
+	}
+}
+
+/*
+=====================
+setupMission
+
+Spawns the mission's own entities: the HUD state, the checkpoint and the save.
+=====================
+*/
+void setupMission() {
+	sys.setSpawnArg( "name", "ptp_mission" );
+	sys.setSpawnArg( "hud_ptp_active", "1" );
+	mission = spawnEntity( "target_null" );
+
+	sys.setSpawnArg( "name", "ptp_checkpoint" );
+	checkpointTarget = spawnEntity( "target_ptp_checkpoint" );
+
+	sys.setSpawnArg( "name", "ptp_save" );
+	saveTarget = spawnEntity( "func_savegame" );
+}
+
+/*
+=====================
+squadJoinsAtBunker
+
+The squad joins the President at the bunker doors, once the stock trigger
+there (trigger_once_41, which also fires the level's first checkpoint save) has
+fired; a trigger_once removes itself when it fires. That save holds this
+waiting thread, so a reload deploys the squad too.
+=====================
+*/
+void squadJoinsAtBunker() {
+	while ( isValidEntity( sys.getEntity( "trigger_once_41" ) ) ) {
+		sys.wait( 0.25 );
+	}
+	fire( checkpointTarget, "the checkpoint (target_ptp_checkpoint)" );
+	squadJoined = 1;
+}
+
+/*
+=====================
+spawnDocument
+=====================
+*/
+void spawnDocument( float n, vector eye ) {
+	sys.setSpawnArg( "name", "ptp_doc_" + n );
+	sys.setSpawnArg( "origin", floorBelow( eye ) + '0 0 8' );
+	spawnEntity( "item_ptp_document" );
+}
+
+/*
+=====================
+countDocuments
+
+Picked-up documents stay in the level, hidden (item_ptp_document "inv_carry").
+=====================
+*/
+float countDocuments() {
+	float	n, found;
+	entity	doc;
+
+	found = 0;
+	for ( n = 1; n <= 3; n++ ) {
+		doc = sys.getEntity( "ptp_doc_" + n );
+		if ( !isValidEntity( doc ) ) {
+			found++;
+		} else if ( doc.isHidden() ) {
+			found++;
+		}
+	}
+	return found;
+}
+
+/*
+=====================
+nameDocuments
+
+Names the documents still lying around for the pickup bar, so the next one
+picked up reads "Intel Document <next> of 3".
+=====================
+*/
+void nameDocuments( float next ) {
+	float	n;
+	entity	doc;
+
+	for ( n = 1; n <= 3; n++ ) {
+		doc = sys.getEntity( "ptp_doc_" + n );
+		if ( isValidEntity( doc ) ) {
+			doc.setKey( "inv_name", "Intel Document " + next + " of 3" );
+		}
+	}
+}
+
+/*
+=====================
+collectIntel
+
+Objective 1: pick up the 3 documents. Until the squad joins, the status line
+points the President to them at the bunker doors.
+=====================
+*/
+void collectIntel() {
+	float	found, shown, shownJoined;
+	string	skip;
+
+	giveObjective( "intel", "Collect the intel", "Strogg intelligence documents are scattered through the bunker. Find all 3." );
+	spawnDocument( 1, DOC_1 );
+	spawnDocument( 2, DOC_2 );
+	spawnDocument( 3, DOC_3 );
+
+	found = 0;
+	shown = -1;
+	shownJoined = -1;
+	while ( found < 3 ) {
+		found = countDocuments();
+		if ( found != shown || squadJoined != shownJoined ) {
+			shown = found;
+			shownJoined = squadJoined;
+			nameDocuments( found + 1 );
+			if ( squadJoined ) {
+				hud( "Collect the intel: " + found + "/3", "Search the bunker for Strogg documents" );
+			} else {
+				hud( "Collect the intel: " + found + "/3", "Your squad is waiting at the bunker doors" );
+			}
+		}
+
+		// test aid: "set ptp_skip 1" (or 2) typed during the objective finishes it
+		skip = sys.getcvar( "ptp_skip" );
+		if ( skip == "1" || skip == "2" ) {
+			found = 3;
+		}
+		sys.wait( 0.25 );
+	}
+
+	checkpoint( "intel" );
+	hud( "Intel secured", "Checkpoint: squad replenished" );
+	waitForObjectivePopup();
+}
+
+/*
+=====================
+destroyComputer
+
+Objective 2: the President walks up to the Strogg data bank to plant a charge,
+then has 10 seconds to get clear. The blast reuses the large exploding barrel's
+damage (120 damage, radius 192) and leaves a fire where the console stood.
+=====================
+*/
+void destroyComputer() {
+	entity	computer, charge;
+	vector	origin;
+	float	n;
+
+	giveObjective( "computer", "Destroy the computer", "Plant a charge on the Strogg data bank, then get clear." );
+	hud( "Destroy the computer", "Plant a charge on the Strogg data bank" );
+
+	origin = floorBelow( COMPUTER );
+	sys.setSpawnArg( "name", "ptp_computer" );
+	sys.setSpawnArg( "origin", origin );
+	sys.setSpawnArg( "angle", COMPUTER_YAW );
+	computer = spawnEntity( "ptp_computer" );
+
+	// the President plants the charge when he walks up to the console
+	while ( sys.vecLength( $player1.getOrigin() - origin ) > 100 ) {
+		sys.wait( 0.1 );
+	}
+	sys.setSpawnArg( "name", "ptp_charge" );
+	sys.setSpawnArg( "origin", $player1.getOrigin() );
+	charge = spawnEntity( "ptp_charge" );
+
+	for ( n = 10; n > 0; n-- ) {
+		hud( "Destroy the computer", "CHARGE PLANTED - GET CLEAR! " + n );
+		sys.wait( 1 );
+	}
+
+	// the effect's last argument is a direction, not angles (idThread::Event_PlayWorldEffect)
+	sys.playWorldEffect( "effects/explosions/surface/turret_exp.fx", origin + '0 0 48', '0 0 1' );
+	sys.radiusDamage( origin, computer, computer, computer, "damage_exploding_barrel_large", 1 );
+	if ( isValidEntity( charge ) ) {
+		charge.remove();
+	}
+	if ( isValidEntity( computer ) ) {
+		computer.remove();
+	}
+
+	sys.setSpawnArg( "origin", origin );
+	sys.setSpawnArg( "fx", "effects/fire/spot_48.fx" );
+	sys.setSpawnArg( "start_on", "1" );
+	sys.setSpawnArg( "loop", "1" );
+	spawnEntity( "func_fx" );
+
+	checkpoint( "computer" );
+	hud( "Computer destroyed", "Checkpoint: squad replenished" );
+	waitForObjectivePopup();
+}
+
+/*
+=====================
+spawnHoldoutPoint
+
+A spawn point for the holdout spawner. The spawner skips a point where a
+marine-sized box touches anything (rvSpawner::ValidateSpawnPoint, and it only
+warns in developer mode), so the same test is made here: the point is lifted a
+little off an uneven floor if needed, and a point that stays blocked is
+reported on the console.
+=====================
+*/
+void spawnHoldoutPoint( float n, vector eye ) {
+	vector	spot;
+	float	lift;
+
+	spot = floorBelow( eye ) + '0 0 1';
+	// 273 = MASK_MONSTERSOLID (CONTENTS_SOLID | CONTENTS_MONSTERCLIP | CONTENTS_BODY)
+	for ( lift = 0; lift < 24; lift += 8 ) {
+		if ( sys.trace( spot, spot, '-16 -16 0', '16 16 72', 273, $player1 ) >= 1 ) {
+			break;
+		}
+		spot = spot + '0 0 8';
+	}
+	if ( lift >= 24 ) {
+		sys.print( "ptp_mission: holdout spawn point " + n + " is blocked\n" );
+	}
+
+	sys.setSpawnArg( "name", "ptp_holdout_spawn_" + n );
+	sys.setSpawnArg( "origin", spot );
+	spawnEntity( "target_null" );
+}
+
+/*
+=====================
+extraction
+
+Objective 3: reach the extraction zone and hold it for HOLD_TIME seconds
+against waves from a stock func_spawner, then MISSION COMPLETE and back to the
+main menu. Entering the zone is a last checkpoint (fresh squad and a save), so
+dying in the holdout reloads at the zone.
+=====================
+*/
+void extraction() {
+	entity	spawner, enemy, endSession;
+	vector	zone;
+	float	dist, n;
+
+	giveObjective( "extract", "Reach extraction", "Get to the extraction zone and hold it until the evac arrives." );
+	zone = floorBelow( EXTRACT );
+
+	dist = sys.vecLength( $player1.getOrigin() - zone );
+	while ( dist > 192 ) {
+		hud( "Reach extraction", "Extraction zone: " + sys.floor( dist ) + " units" );
+		sys.wait( 0.25 );
+		dist = sys.vecLength( $player1.getOrigin() - zone );
+	}
+
+	// last checkpoint: the walk back from the computer is a hard fight, so a fresh squad
+	// (and a save) for the holdout
+	fire( checkpointTarget, "the checkpoint (target_ptp_checkpoint)" );
+	fire( saveTarget, "the checkpoint save (func_savegame)" );
+
+	// spawn points first: a spawner looks up its "target" entities when it spawns
+	spawnHoldoutPoint( 1, SPAWN_1 );
+	spawnHoldoutPoint( 2, SPAWN_2 );
+
+	// waves that go straight for the President (the spawner copies "spawn_*" keys onto
+	// each enemy) and stay awake out of view ("neverDormant": dormant AI outside the
+	// player's PVS stand still); spawn points in view are used too ("skipvisible" "0")
+	sys.setSpawnArg( "name", "ptp_holdout_spawner" );
+	sys.setSpawnArg( "origin", zone );
+	sys.setSpawnArg( "target", "ptp_holdout_spawn_1" );
+	sys.setSpawnArg( "target1", "ptp_holdout_spawn_2" );
+	sys.setSpawnArg( "def_spawn_1", "monster_strogg_marine" );
+	sys.setSpawnArg( "def_spawn_2", "monster_strogg_marine_mgun" );
+	sys.setSpawnArg( "def_spawn_3", "monster_strogg_marine_sgun" );
+	sys.setSpawnArg( "count", "-1" );
+	sys.setSpawnArg( "max_active", "4" );
+	sys.setSpawnArg( "delay", "2" );
+	sys.setSpawnArg( "skipvisible", "0" );
+	sys.setSpawnArg( "spawn_enemy", "player1" );
+	sys.setSpawnArg( "spawn_neverDormant", "1" );
+	spawner = spawnEntity( "func_spawner" );
+	fire( spawner, "the holdout spawner (func_spawner)" );
+
+	for ( n = HOLD_TIME; n > 0; n-- ) {
+		hud( "Hold the extraction zone", "EVAC IN " + n );
+		sys.wait( 1 );
+	}
+
+	// the evac is in: the attackers still out drop, then the spawner is switched off
+	// (triggering it again stops it and removes it)
+	if ( isValidEntity( spawner ) ) {
+		for ( n = spawner.numActiveEntities() - 1; n >= 0; n-- ) {
+			enemy = spawner.getActiveEntity( n );
+			if ( isValidEntity( enemy ) ) {
+				enemy.kill();
+			}
+		}
+	}
+	fire( spawner, "the holdout spawner (func_spawner)" );
+
+	fire( sys.getEntity( "ptp_done_extract" ), "objective complete 'extract'" );
+	hud( "MISSION COMPLETE", "The President has been extracted" );
+
+	// the MISSION COMPLETE screen: our help-screen trigger (rvTrigger_HelpScreen),
+	// spawned around the President so he touches it at once
+	sys.setSpawnArg( "origin", $player1.getOrigin() );
+	sys.setSpawnArg( "mins", "-48 -48 -16" );
+	sys.setSpawnArg( "maxs", "48 48 96" );
+	sys.setSpawnArg( "gui", "guis/ptp_mission_complete.gui" );
+	sys.setSpawnArg( "duration", "10" );
+	sys.setSpawnArg( "wait", "-1" );
+	spawnEntity( "trigger_helpscreen" );
+
+	// then back to the main menu
+	sys.wait( 8 );
+	sys.setSpawnArg( "command", "disconnect" );
+	endSession = spawnEntity( "target_sessionCommand" );
+	fire( endSession, "the session command (target_sessionCommand)" );
+}
+
+/*
+=====================
+run
+
+Test aid: "set ptp_skip 1" before loading the map skips objective 1, "2" skips
+to extraction. The extraction zone is before the bunker doors, so with "2" the
+squad comes at once.
+=====================
+*/
+void run() {
+	string skip;
+
+	sys.print( "ptp_mission: waiting for the intro\n" );
+	waitForIntro();
+	sys.print( "ptp_mission: intro over, mission start\n" );
+
+	setupLevel();
+	setupMission();
+
+	skip = sys.getcvar( "ptp_skip" );
+	if ( skip == "2" ) {
+		fire( checkpointTarget, "the checkpoint (target_ptp_checkpoint)" );
+		squadJoined = 1;
+	} else {
+		thread squadJoinsAtBunker();
+	}
+
+	if ( skip != "1" && skip != "2" ) {
+		collectIntel();
+	}
+	if ( skip != "2" ) {
+		destroyComputer();
+	}
+	extraction();
+}
+
+}	// end namespace ptp_mission
+
+void main() {
+	thread ptp_mission::run();
+}

@@ -1387,6 +1387,7 @@ void idClass::RegisterClasses( void )
 	REGISTER(rvTarget_ExitAreaAlert); // ..\..\code\game\Target.cpp
 	REGISTER(rvTarget_LaunchProjectile); // ..\..\code\game\Target.cpp
 	REGISTER(rvTarget_Nailable); // ..\..\code\game\Target.cpp
+	REGISTER(rvTarget_PTPCheckpoint); // ..\..\code\game\Target.cpp
 	REGISTER(rvTarget_SecretArea); // ..\..\code\game\Target.cpp
 	REGISTER(rvTarget_TetherAI); // ..\..\code\game\Target.cpp
 	REGISTER(rvTramCar); // ..\..\code\game\SplineMover.cpp

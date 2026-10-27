@@ -1,0 +1,37 @@
+windowDef Desktop {
+	rect		0, 0, 640, 480
+	backcolor	0, 0, 0, 0.7
+	visible		1
+
+	windowDef CompletePanel {
+		rect		80, 130, 480, 200
+		backcolor	0.1, 0.1, 0.15, 0.95
+		visible		1
+
+		windowDef CompleteTitle {
+			rect		20, 25, 440, 50
+			forecolor	1, 0.8, 0.2, 1
+			textscale	0.6
+			textalign	1
+			font		"fonts/marine"
+			text		"MISSION COMPLETE"
+			visible		1
+		}
+
+		windowDef CompleteLine {
+			rect		20, 85, 440, 2
+			backcolor	1, 0.8, 0.2, 0.8
+			visible		1
+		}
+
+		windowDef CompleteText {
+			rect		20, 100, 440, 80
+			forecolor	0.9, 0.9, 0.9, 1
+			textscale	0.28
+			textalign	1
+			font		"fonts/marine"
+			text		"The President has been extracted.\n\nThe intel is secured and the Strogg data bank is destroyed."
+			visible		1
+		}
+	}
+}

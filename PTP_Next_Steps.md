@@ -284,3 +284,61 @@ HUD text can be bound to C++ state: stock `hud.gui` uses `text "gui::player_heal
 - Pickups (`spawn weapon_shotgun` etc.) show the new names.
 - No def warnings in the console.
 - `give all` still can't make the President fire.
+
+## 10. Objectives + extraction holdout (midterm deliverables, branch `objs_and_extr`, 2026-10-25/26)
+**Status:** built and committed as `877314f`; confirmed end to end in game by the user (objectives, checkpoints, holdout with enemies from both spawn points, MISSION COMPLETE and back to the menu).
+
+**Hook (no `.map` edit):**
+- `idWorldspawn::Spawn` compiles `maps/<mapname>.script` and runs its global `main()` next to the stock level script, which is started by the worldspawn `"call"` key. So `maps/game/airdefense1.script` (namespace `ptp_mission`) runs on top of the stock level. The MP precedent is `pak019:maps/mp/q4xdm14.script`.
+- Everything the mission needs is spawned at runtime from stock or mod defs.
+
+**Mission flow (`run()`):**
+1. **Intro:** wait until neither intro camera (`cin_camera_intro_cin_1`, `cin_opening`) has been active for 2 s; the same `isActive()` test as `playCameraWait`.
+2. **`setupLevel()`:**
+   - The stock objective entities are renamed, and a `target_null` takes over each name (`replaceEntity`), so the stock `sys.trigger( $objective… )` calls still hit an entity.
+   - `target_endlevel_2` (the exit to airdefense2) is removed.
+   - The Cortez scene is removed (`trigger_relay_5`, `npc_cortez`, `strogg_cortez_1`/`2`, `cortez_berserker`); the extraction zone is where he stands.
+   - The intro Harvester gets `disableTarget()`.
+3. **`setupMission()`:** the `ptp_mission` HUD-state entity (`target_null`), `target_ptp_checkpoint` and a `func_savegame`.
+4. **The squad joins at the bunker doors**, when the stock `trigger_once_41` (which also fires the level's first save) has fired and removed itself. Deploying at the dropship left the squad stuck on the narrow ramp outside it.
+5. **Objective 1:** 3 `item_ptp_document` (binder model) at the user's spots. Picked-up documents stay hidden, and that is what gets counted. The next one is renamed "Intel Document n of 3" for the pickup bar.
+6. **Objective 2:** `ptp_computer` (Strogg `data_bank1.lwo`).
+   - Within 100 units, the charge (`ptp_charge`, minepack) drops at the President's feet and the 10 s countdown starts.
+   - Then `turret_exp.fx`, `radiusDamage` with stock `damage_exploding_barrel_large`, the console is removed and a fire `func_fx` stays.
+7. **Objective 3:**
+   - The HUD shows the distance to `EXTRACT` (Cortez's spot).
+   - Inside 192 units: a checkpoint, then a `func_spawner` on 2 spawn points (`max_active 4`, `delay 2`, `skipvisible 0`, `spawn_enemy player1`, `spawn_neverDormant 1`).
+   - After a `HOLD_TIME` (25 s) countdown: survivors are killed, the spawner is stopped, MISSION COMPLETE shows (a `trigger_helpscreen` spawned on the President with `guis/ptp_mission_complete.gui`), and after 8 s `target_sessionCommand "disconnect"` returns to the main menu.
+
+**Checkpoints:** every completed objective, and entering the extraction zone, fires `target_ptp_checkpoint` (a fresh squad around the President) and the `func_savegame`. Between objectives the script waits 5.5 s, because the stock "objective complete" popup otherwise swallows the next objective's popup.
+
+**C++:**
+- `PTP_DeploySquad` (`SysCmds.cpp`), shared by `ptp_squad` and checkpoints. Spots must pass an aas32 route check that mirrors `idAI::TravelDistance`. Each member tries its own slot, then a 12-spot fallback ring, then any open spot ("placed anyway").
+- `rvTarget_PTPCheckpoint` (`Target.cpp`), **registered in `idClass::RegisterClasses` (`Class.cpp`)**.
+- `PTP_UpdateMissionHud` (`Player.cpp`) copies the `hud_*` keys of `ptp_mission` to the HUD.
+
+**Data:**
+- `def/ptp_mission.def`.
+- The `ptp_mission` panel in `guis/hud.gui`.
+- `guis/ptp_mission_complete.gui`.
+- Squad `"followRange" "60 128"` (closer follow than the stock 192).
+
+**Placement** (`getviewpos` eye positions; `floorBelow()` traces to the floor): constants at the top of the script. Holdout spawn points are checked with the spawner's own box test and lifted off uneven floor. A blocked one prints `ptp_mission: holdout spawn point N is blocked`.
+
+**Test aid:** `set ptp_skip 1` skips objective 1 (also live during it), `set ptp_skip 2` goes straight to extraction, `set ptp_skip 0` restores the normal flow. Set it before `map game/airdefense1`.
+
+**Gotchas found:**
+- A new C++ entity class must be added to `idClass::RegisterClasses`, or it is "not found".
+- A NULL entity passed to an event `'e'` parameter (e.g. `sys.trigger`) terminates the script thread. Retail Quake 4 only shows that warning with `developer 1`.
+- A per-map script doesn't see the stock `#define`s (`true`, `false`, `MASK_*`…).
+- Items with mesh models need `"mins"`/`"maxs"`.
+- `target_tip` never shows.
+- AI spawned out of the player's PVS goes dormant.
+- The spawner silently skips spawn points that fail its box check.
+- The start area can't be reached again after the medic door, hence extraction at Cortez's spot.
+
+**Tried and reverted:**
+- `"ignore_obstacles" "1"` on the squad (didn't fix the ramp).
+- Click-to-plant on an interactive CPU-box screen (clicking never planted).
+
+**Known limit:** squad pathing on the narrow ramp outside the dropship is unreliable; the bunker-door deploy avoids it.

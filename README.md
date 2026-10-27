@@ -76,6 +76,21 @@ The mod uses a contemporary weapons theme: all 11 Quake 4 weapons are renamed af
 - **The crosshair is your aim point** for Attack.
 - Movement and every other key are the Quake 4 defaults.
 
+## The mission: Air Defense Bunker
+
+Start it from the console with `map game/airdefense1`. The mission runs on top of Quake 4's first level; the level's own objectives and its exit to the next level are switched off.
+
+You wake up next to the crashed dropship. Head for the bunker doors: your squad joins you there.
+
+| # | Objective | What to do |
+|---|---|---|
+| 1 | Collect the intel | Find the 3 Strogg documents (binders) in the bunker and walk over them. |
+| 2 | Destroy the computer | Walk up to the Strogg data bank to plant a charge, then get clear. It blows after 10 seconds and hurts anyone standing close. |
+| 3 | Reach extraction | Get to the extraction zone (the HUD counts down the distance), then hold it for 25 seconds while the Strogg pour in. Survive, and it's MISSION COMPLETE and back to the main menu. |
+
+- **The mission panel** under the order panel shows the current objective and its status: documents found, the charge countdown, the distance to extraction and the evac countdown. The objectives screen (`Z`) lists them too.
+- **Checkpoints:** completing an objective, and stepping into the extraction zone, deploys a fresh squad of five around you (full health, following you) and saves the game. If the President dies, you continue from the last checkpoint.
+
 ## Console commands
 
 Open the console with `~` (or Ctrl+Alt+~).
@@ -86,11 +101,11 @@ Open the console with `~` (or Ctrl+Alt+~).
 | `ptp_help` | Shows or hides the help screen, same as Tab |
 | `ptp_attack`, `ptp_protect`, `ptp_wait`, `ptp_scatter` | The four orders, same as keys 1-4 |
 
-To try it out: `map game/airdefense1`, then `ptp_squad`.
+To play the mission: `map game/airdefense1` (see "The mission" above).
 
 ## Install and launch
 
-1. Put the `ABRACADABRA` folder inside your Quake 4 install folder, next to `q4base`.
+1. Put the `ABRACADABRA` folder inside your Quake 4 install folder, next to `q4base`. It holds `game000.pk4` (the game code), `pak001.pk4` (the mod's defs, GUIs and mission script), `PTP_Launch.bat` and this README.
 2. Launch with `ABRACADABRA\PTP_Launch.bat`, or run `Quake4.exe +set fs_game ABRACADABRA`.
 
 The intro logos are skipped, and the game goes straight to the main menu.
@@ -104,10 +119,4 @@ The intro logos are skipped, and the game goes straight to the main menu.
 
 - Build only `game.vcxproj`, Release | Win32, with `-p:BuildProjectReferences=false` so idLib is never rebuilt.
 - Package the resulting `Gamex86.dll`, together with `binary.conf`, into `ABRACADABRA\game000.pk4`.
-- Loose mod files (`def\`, `def\weapons\`, `guis\`) go in the `ABRACADABRA` folder, where they override the stock pk4s.
-
-## Coming soon
-
-- Mission objectives
-- Checkpoints that replenish the squad
-- The extraction holdout
+- The mod's data files (`def\`, `def\weapons\`, `guis\`, `maps\game\airdefense1.script`) are packaged in `ABRACADABRA\pak001.pk4`. While developing, loose copies of them in the `ABRACADABRA` folder override the pk4s.
